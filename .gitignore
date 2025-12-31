@@ -10,3 +10,4 @@ __pycache__/
 # Distribution / Build
 dist/
 *.egg-info/
+output/
