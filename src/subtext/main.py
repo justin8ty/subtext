@@ -10,7 +10,9 @@ from typing import ClassVar
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
+from textual.command import Hit, Hits, Provider
 from textual.containers import Container, Horizontal, Vertical
+from textual.screen import Screen
 from textual.widgets import (
     Button,
     Collapsible,
@@ -18,7 +20,9 @@ from textual.widgets import (
     Input,
     Label,
     RichLog,
+    Select,
     Static,
+    TextArea,
 )
 
 from subtext.chunker import chunk_text
@@ -26,6 +30,254 @@ from subtext.config import Settings
 from subtext.extractor import ExtractionError, ExtractionResult, extract_subtitles
 from subtext.processor import process_subtitles
 from subtext.summarizer import SummarizationError, summarize
+
+
+class SubtextCommands(Provider):
+    """Command palette provider for Subtext settings."""
+
+    async def search(self, query: str) -> Hits:
+        """Search for settings commands."""
+        matcher = self.matcher(query)
+
+        score = matcher.match("Settings: Configure LLM & Prompts")
+        if score > 0:
+            yield Hit(
+                score,
+                matcher.highlight("Settings: Configure LLM & Prompts"),
+                self._open_settings,
+                help="Edit API keys, models, and prompts",
+            )
+
+    async def _open_settings(self) -> None:
+        """Open settings screen."""
+        app = self.screen.app
+        if isinstance(app, SubtextApp):
+            app.action_open_settings()
+
+
+class SettingsScreen(Screen):
+    """Settings screen for configuring LLM provider, API keys, and prompts."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    CSS = """
+    SettingsScreen {
+        align: center middle;
+    }
+
+    #settings-container {
+        width: 90%;
+        height: 90%;
+        background: #0d1117;
+        border: round #5a8a9a;
+        padding: 1 2;
+    }
+
+    #settings-title {
+        text-style: bold;
+        color: #a8d8ea;
+        text-align: center;
+        width: 100%;
+        padding-bottom: 1;
+    }
+
+    .settings-row {
+        height: 3;
+        margin-bottom: 1;
+    }
+
+    .field-label {
+        color: #a8d8ea;
+        width: 12;
+        padding-right: 1;
+    }
+
+    #provider-select {
+        width: 20;
+        background: #161b22;
+    }
+
+    .settings-input {
+        width: 1fr;
+        background: #161b22;
+        border: tall #5a8a9a;
+    }
+
+    .settings-input:focus {
+        border: tall #a8d8ea;
+    }
+
+    .prompt-section {
+        height: 1fr;
+        margin-bottom: 1;
+    }
+
+    .prompt-label {
+        color: #a8d8ea;
+        padding-bottom: 0;
+    }
+
+    .prompt-textarea {
+        height: 1fr;
+        background: #161b22;
+        border: tall #5a8a9a;
+    }
+
+    .prompt-textarea:focus {
+        border: tall #a8d8ea;
+    }
+
+    #button-row {
+        height: 3;
+        align: center middle;
+        padding-top: 1;
+    }
+
+    #save-btn {
+        margin-right: 2;
+        background: #5a8a9a;
+        color: #e6edf3;
+        border: none;
+    }
+
+    #save-btn:hover {
+        background: #a8d8ea;
+        color: #0d1117;
+    }
+
+    #cancel-btn {
+        background: transparent;
+        color: #7d8590;
+        border: tall #7d8590;
+    }
+
+    #cancel-btn:hover {
+        color: #e6edf3;
+        border: tall #e6edf3;
+    }
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        super().__init__()
+        self.settings = settings
+
+    def compose(self) -> ComposeResult:
+        with Container(id="settings-container"):
+            yield Static("Settings", id="settings-title")
+
+            # Provider row
+            with Horizontal(classes="settings-row"):
+                yield Static("Provider:", classes="field-label")
+                yield Select(
+                    [("Gemini", "gemini"), ("OpenAI", "openai")],
+                    value=self.settings.llm_provider,
+                    id="provider-select",
+                )
+
+            # Model row
+            with Horizontal(classes="settings-row"):
+                yield Static("Model:", classes="field-label")
+                yield Input(
+                    value=self._get_current_model(),
+                    placeholder="Model name",
+                    id="model-input",
+                    classes="settings-input",
+                )
+
+            # API Key row
+            with Horizontal(classes="settings-row"):
+                yield Static("API Key:", classes="field-label")
+                yield Input(
+                    value=self._get_current_api_key(),
+                    placeholder="Enter API key",
+                    password=True,
+                    id="api-key-input",
+                    classes="settings-input",
+                )
+
+            # Chunk Prompt
+            with Vertical(classes="prompt-section"):
+                yield Static("Chunk Prompt", classes="prompt-label")
+                yield TextArea(
+                    self.settings.chunk_prompt,
+                    id="chunk-prompt",
+                    classes="prompt-textarea",
+                )
+
+            # Aggregation Prompt
+            with Vertical(classes="prompt-section"):
+                yield Static("Aggregation Prompt", classes="prompt-label")
+                yield TextArea(
+                    self.settings.aggregation_prompt,
+                    id="aggregation-prompt",
+                    classes="prompt-textarea",
+                )
+
+            with Horizontal(id="button-row"):
+                yield Button("Save", id="save-btn", variant="primary")
+                yield Button("Cancel", id="cancel-btn")
+
+    def _get_current_model(self) -> str:
+        """Get the current model name based on provider."""
+        if self.settings.llm_provider == "openai":
+            return self.settings.openai_model
+        return self.settings.gemini_model
+
+    def _get_current_api_key(self) -> str:
+        """Get the current API key based on provider."""
+        if self.settings.llm_provider == "openai":
+            return self.settings.openai_api_key
+        return self.settings.gemini_api_key
+
+    @on(Select.Changed, "#provider-select")
+    def on_provider_changed(self, event: Select.Changed) -> None:
+        """Update model and API key fields when provider changes."""
+        model_input = self.query_one("#model-input", Input)
+        api_key_input = self.query_one("#api-key-input", Input)
+        if event.value == "openai":
+            model_input.value = self.settings.openai_model
+            api_key_input.value = self.settings.openai_api_key
+        else:
+            model_input.value = self.settings.gemini_model
+            api_key_input.value = self.settings.gemini_api_key
+
+    @on(Button.Pressed, "#save-btn")
+    def on_save(self) -> None:
+        """Save settings to config file and close screen."""
+        # Get values from form
+        provider_select = self.query_one("#provider-select", Select)
+        provider = str(provider_select.value) if provider_select.value else "gemini"
+        model = self.query_one("#model-input", Input).value.strip()
+        api_key = self.query_one("#api-key-input", Input).value.strip()
+        chunk_prompt = self.query_one("#chunk-prompt", TextArea).text
+        aggregation_prompt = self.query_one("#aggregation-prompt", TextArea).text
+
+        # Update settings
+        self.settings.llm_provider = provider
+        if provider == "openai":
+            self.settings.openai_model = model or self.settings.openai_model
+            self.settings.openai_api_key = api_key
+        else:
+            self.settings.gemini_model = model or self.settings.gemini_model
+            self.settings.gemini_api_key = api_key
+        self.settings.chunk_prompt = chunk_prompt
+        self.settings.aggregation_prompt = aggregation_prompt
+
+        # Save to file
+        self.settings.save()
+
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#cancel-btn")
+    def on_cancel_btn(self) -> None:
+        """Close screen without saving."""
+        self.dismiss(False)
+
+    def action_cancel(self) -> None:
+        """Handle escape key."""
+        self.dismiss(False)
 
 
 class StageRow(Static):
@@ -96,6 +348,7 @@ class SubtextApp(App):
     """Subtext TUI application."""
 
     TITLE = "Subtext"
+    COMMANDS = App.COMMANDS | {SubtextCommands}
     CSS = """
     $accent: #a8d8ea;
     $accent-dim: #5a8a9a;
@@ -537,6 +790,15 @@ class SubtextApp(App):
         """Toggle log panel visibility."""
         collapsible = self.query_one("#log-collapsible", Collapsible)
         collapsible.collapsed = not collapsible.collapsed
+
+    def action_open_settings(self) -> None:
+        """Open settings screen."""
+        self.push_screen(SettingsScreen(self.settings), self._on_settings_closed)
+
+    def _on_settings_closed(self, saved: bool | None) -> None:
+        """Handle settings screen close."""
+        if saved:
+            self.log_message("[green]Settings saved.[/green]")
 
     async def action_quit(self) -> None:
         """Handle quit action (Ctrl+C)."""
