@@ -12,6 +12,7 @@ Subtext is a TUI-based tool for extracting YouTube subtitles and summarizing the
 
 ```bash
 # Install with uv
+uv venv
 uv pip install -e .
 uv pip install textual yt-dlp google-genai openai tiktoken python-dotenv
 
