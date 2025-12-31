@@ -1,10 +1,10 @@
 ## Updated Implementation Checklist (Python + Textual)
 
 ### Core Stack
-- [ ] Python
+- [x] Python
 - [ ] Textual
-- [ ] yt-dlp
-- [ ] Google Generative AI SDK
+- [x] yt-dlp
+- [x] Google Generative AI SDK
 
 ### TUI (Textual)
 - [ ] Single-screen layout
@@ -21,26 +21,26 @@
 - [ ] Ensure no background tasks continue running
 
 ### Subtitle Extraction
-- [ ] Fetch manual subtitles if available
-- [ ] Fallback to auto-generated captions
-- [ ] Support vtt / srt formats
+- [x] Fetch manual subtitles if available
+- [x] Fallback to auto-generated captions
+- [x] Support vtt / srt formats
 
 ### Subtitle Processing
-- [ ] Remove timestamps / metadata
-- [ ] Merge broken lines
-- [ ] Normalize whitespace
-- [ ] Deduplicate overlapping captions
+- [x] Remove timestamps / metadata
+- [x] Merge broken lines
+- [x] Normalize whitespace
+- [x] Deduplicate overlapping captions
 
 ### Chunking
-- [ ] Token- or length-based chunking
-- [ ] Configurable chunk size, use best practices by default
-- [ ] Small overlap between chunks
+- [x] Token- or length-based chunking
+- [x] Configurable chunk size, use best practices by default
+- [x] Small overlap between chunks
 
 ### LLM Summarization
-- [ ] Per-chunk summarization
-- [ ] Final aggregation pass
-- [ ] Configurable model, use Gemini by default
-- [ ] Configurable summary prompt, provide initial template
+- [x] Per-chunk summarization
+- [x] Final aggregation pass
+- [x] Configurable model, use Gemini by default
+- [x] Configurable summary prompt, provide initial template
 
 ### Output
 - [ ] Display summary in TUI
@@ -49,5 +49,5 @@
 
 ### Error Handling & Cleanup
 - [ ] Clear error states (no subtitles, API failure)
-- [ ] Temporary directory per run
+- [x] Temporary directory per run
 - [ ] Guaranteed cleanup on success / failure / cancel
