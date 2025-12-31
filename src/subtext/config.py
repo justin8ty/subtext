@@ -14,6 +14,28 @@ DEFAULT_CHUNK_SIZE = 8000
 DEFAULT_CHUNK_OVERLAP = 200
 DEFAULT_OUTPUT_DIR = "./output"
 DEFAULT_SUBTITLE_LANGUAGE = "en"
+DEFAULT_API_DELAY = 0.5  # seconds between API calls
+
+DEFAULT_CHUNK_PROMPT = """Summarize the following transcript excerpt. 
+Extract the key points, main ideas, and important details.
+Be concise but comprehensive.
+
+Transcript:
+{text}
+
+Summary:"""
+
+DEFAULT_AGGREGATION_PROMPT = """You are given summaries of different parts of a video transcript.
+Combine them into a single coherent summary in markdown format.
+Include:
+- A brief overview (2-3 sentences)
+- Key points as bullet points
+- Any important details or takeaways
+
+Part summaries:
+{summaries}
+
+Final summary:"""
 
 
 @dataclass
@@ -29,6 +51,9 @@ class Settings:
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP
     output_dir: Path = Path(DEFAULT_OUTPUT_DIR)
     subtitle_language: str = DEFAULT_SUBTITLE_LANGUAGE
+    api_delay: float = DEFAULT_API_DELAY
+    chunk_prompt: str = DEFAULT_CHUNK_PROMPT
+    aggregation_prompt: str = DEFAULT_AGGREGATION_PROMPT
 
     @classmethod
     def load(cls) -> "Settings":
@@ -45,4 +70,9 @@ class Settings:
             chunk_overlap=int(os.getenv("CHUNK_OVERLAP", str(DEFAULT_CHUNK_OVERLAP))),
             output_dir=Path(os.getenv("OUTPUT_DIR", DEFAULT_OUTPUT_DIR)),
             subtitle_language=os.getenv("SUBTITLE_LANGUAGE", DEFAULT_SUBTITLE_LANGUAGE),
+            api_delay=float(os.getenv("API_DELAY", str(DEFAULT_API_DELAY))),
+            chunk_prompt=os.getenv("CHUNK_PROMPT", DEFAULT_CHUNK_PROMPT),
+            aggregation_prompt=os.getenv(
+                "AGGREGATION_PROMPT", DEFAULT_AGGREGATION_PROMPT
+            ),
         )
