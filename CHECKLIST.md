@@ -2,22 +2,22 @@
 
 ### Core Stack
 - [x] Python
-- [ ] Textual
+- [x] Textual
 - [x] yt-dlp
 - [x] Google Generative AI SDK
 
 ### TUI (Textual)
-- [ ] Single-screen layout
-- [ ] URL input field
-- [ ] Status / progress indicators per pipeline stage
-- [ ] Scrollable log/output pane
-- [ ] Final summary view
-- [ ] Global cancel action (keyboard-triggered)
+- [x] Single-screen layout
+- [x] URL input field
+- [x] Status / progress indicators per pipeline stage
+- [x] Scrollable log/output pane
+- [x] Final summary view
+- [x] Global cancel action (keyboard-triggered)
 
 ### Task Cancellation
 - [ ] Gracefully terminate yt-dlp subprocess on cancel
 - [ ] Abort pending / in-flight LLM requests
-- [ ] Reset UI state after cancellation
+- [x] Reset UI state after cancellation
 - [ ] Ensure no background tasks continue running
 
 ### Subtitle Extraction
@@ -43,8 +43,8 @@
 - [x] Configurable summary prompt, provide initial template
 
 ### Output
-- [ ] Display summary in TUI
-- [ ] Save summary to file (.md)
+- [x] Display summary in TUI
+- [x] Save summary to file (.md)
 - [ ] Copy-to-clipboard support
 
 ### Error Handling & Cleanup
