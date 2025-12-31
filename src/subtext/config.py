@@ -8,11 +8,12 @@ from dotenv import load_dotenv
 
 # Defaults
 DEFAULT_LLM_PROVIDER = "gemini"
-DEFAULT_GEMINI_MODEL = "gemini-1.5-flash"
-DEFAULT_OPENAI_MODEL = "gpt-3.5-turbo"
+DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
+DEFAULT_OPENAI_MODEL = "gpt-5-mini"
 DEFAULT_CHUNK_SIZE = 8000
 DEFAULT_CHUNK_OVERLAP = 200
 DEFAULT_OUTPUT_DIR = "./output"
+DEFAULT_SUBTITLE_LANGUAGE = "en"
 
 
 @dataclass
@@ -27,6 +28,7 @@ class Settings:
     chunk_size: int = DEFAULT_CHUNK_SIZE
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP
     output_dir: Path = Path(DEFAULT_OUTPUT_DIR)
+    subtitle_language: str = DEFAULT_SUBTITLE_LANGUAGE
 
     @classmethod
     def load(cls) -> "Settings":
@@ -42,4 +44,5 @@ class Settings:
             chunk_size=int(os.getenv("CHUNK_SIZE", str(DEFAULT_CHUNK_SIZE))),
             chunk_overlap=int(os.getenv("CHUNK_OVERLAP", str(DEFAULT_CHUNK_OVERLAP))),
             output_dir=Path(os.getenv("OUTPUT_DIR", DEFAULT_OUTPUT_DIR)),
+            subtitle_language=os.getenv("SUBTITLE_LANGUAGE", DEFAULT_SUBTITLE_LANGUAGE),
         )

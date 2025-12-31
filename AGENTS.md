@@ -12,9 +12,10 @@ Subtext is a TUI-based tool for extracting YouTube subtitles and summarizing the
 
 ```bash
 # Install with uv
+# Don't use uv pip install
 uv venv
-uv pip install -e .
-uv pip install textual yt-dlp google-genai openai tiktoken python-dotenv
+uv add textual yt-dlp google-genai openai tiktoken python-dotenv
+uv sync
 
 # Run application
 subtext                      # via entry point
@@ -145,6 +146,7 @@ subtext/
 - Descriptive names: `test_<function>_<scenario>_<expected>`
 - Use `pytest-asyncio` for async tests
 - Mock external services (yt-dlp, LLM APIs)
+- Postpone making tests until implementation is done
 
 ```python
 @pytest.mark.asyncio
