@@ -1,4 +1,4 @@
-"""Subtext TUI - YouTube subtitle summarizer."""
+"""Subtext - Summarize YouTube in TUI."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import ClassVar
 
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import (
     Button,
@@ -31,10 +31,10 @@ from subtext.summarizer import SummarizationError, summarize
 class StageRow(Static):
     """A single pipeline stage with status icon and message."""
 
-    PENDING = "grey"
-    RUNNING = "yellow"
-    COMPLETE = "green"
-    ERROR = "red"
+    PENDING = "#7d8590"
+    RUNNING = "#d29922"
+    COMPLETE = "#3fb950"
+    ERROR = "#f85149"
 
     def __init__(self, stage_id: str, label: str, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -57,7 +57,7 @@ class StageRow(Static):
     def set_running(self, message: str = "") -> None:
         self.status = self.RUNNING
         self._message = message
-        self._update_display("◐", self.RUNNING, message)
+        self._update_display("●", self.RUNNING, message)
 
     def set_complete(self, message: str = "") -> None:
         self.status = self.COMPLETE
@@ -74,8 +74,12 @@ class StageRow(Static):
         icon_label.update(icon)
         icon_label.styles.color = color
 
+        label = self.query_one(".stage-label", Label)
+        label.styles.color = color
+
         msg_label = self.query_one(f"#msg-{self.stage_id}", Label)
         msg_label.update(message)
+        msg_label.styles.color = color
 
 
 class ProgressPanel(Static):
@@ -93,33 +97,58 @@ class SubtextApp(App):
 
     TITLE = "Subtext"
     CSS = """
-    Screen {
-        background: $surface;
-    }
+    $accent: #a8d8ea;
+    $accent-dim: #5a8a9a;
+    $bg: #0d1117;
+    $bg-light: #161b22;
+    $fg: #e6edf3;
+    $fg-muted: #7d8590;
+    $success: #3fb950;
+    $warning: #d29922;
+    $error: #f85149;
 
-    #header {
-        dock: top;
-        height: 3;
-        content-align: center middle;
-        background: $primary;
-        color: $text;
-        text-style: bold;
+    Screen {
+        background: $bg;
+        color: $fg;
     }
 
     #input-row {
         dock: top;
         height: 3;
         padding: 0 1;
-        margin-bottom: 1;
+        margin: 0 0 1 0;
     }
 
     #url-input {
         width: 1fr;
+        background: $bg-light;
+        border: tall $accent-dim;
+        color: $fg;
+        padding: 0 1;
+    }
+
+    #url-input:focus {
+        border: tall $accent;
     }
 
     #start-btn {
-        width: 12;
+        width: 8;
+        min-width: 8;
         margin-left: 1;
+        background: transparent;
+        color: $accent;
+        border: tall $accent-dim;
+        text-style: none;
+    }
+
+    #start-btn:hover {
+        background: $accent-dim;
+        color: $fg;
+        border: tall $accent;
+    }
+
+    #start-btn:focus {
+        border: tall $accent;
     }
 
     #main-content {
@@ -129,74 +158,100 @@ class SubtextApp(App):
 
     #progress-container {
         height: auto;
-        border: solid $primary;
-        padding: 1;
+        background: $bg-light;
+        border: round $accent-dim;
+        padding: 0 1;
         margin-bottom: 1;
     }
 
-    #progress-container > Label {
-        dock: top;
-        padding: 0 1;
-        background: $primary;
-        color: $text;
-        margin-bottom: 1;
+    .section-title {
+        color: $accent;
+        text-style: bold;
+        padding: 0;
+        margin: 0 0 0 0;
     }
 
     .stage-row {
         height: 1;
         margin: 0;
+        padding: 0;
     }
 
     .stage-icon {
-        width: 3;
-        color: grey;
+        width: 2;
+        color: $fg-muted;
     }
 
     .stage-label {
-        width: 12;
-        text-style: bold;
+        width: 11;
+        color: $fg-muted;
     }
 
     .stage-message {
         width: 1fr;
-        color: $text-muted;
+        color: $fg-muted;
     }
 
     #summary-container {
         height: 1fr;
-        border: solid $secondary;
-        margin-bottom: 1;
-    }
-
-    #summary-container > Label {
-        dock: top;
+        background: $bg-light;
+        border: round $accent-dim;
         padding: 0 1;
-        background: $secondary;
-        color: $text;
+        margin-bottom: 1;
     }
 
     #summary {
         height: 1fr;
-        padding: 0 1;
+        background: $bg-light;
+        padding: 0;
+        scrollbar-size: 1 1;
     }
 
     #log-collapsible {
         height: auto;
-        max-height: 12;
+        max-height: 10;
+        background: $bg;
+        border: none;
+        padding: 0;
     }
 
     #log-collapsible > Contents {
-        height: 8;
-        max-height: 8;
+        height: 6;
+        max-height: 6;
+        background: $bg-light;
+        border: round $accent-dim;
+        padding: 0 1;
+    }
+
+    #log-collapsible CollapsibleTitle {
+        color: $fg-muted;
+        padding: 0;
+        background: $bg;
+    }
+
+    #log-collapsible CollapsibleTitle:hover {
+        color: $accent;
     }
 
     #log {
         height: 100%;
-        padding: 0 1;
+        background: $bg-light;
+        padding: 0;
+        scrollbar-size: 1 1;
+    }
+
+    Footer {
+        background: $bg;
+        color: $fg-muted;
+    }
+
+    Footer > .footer--key {
+        background: $accent-dim;
+        color: $fg;
     }
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+x", "cancel", "Cancel"),
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+l", "toggle_log", "Toggle Log"),
@@ -211,23 +266,22 @@ class SubtextApp(App):
         self.raw_char_count = 0
 
     def compose(self) -> ComposeResult:
-        yield Static("Subtext", id="header")
         with Horizontal(id="input-row"):
-            yield Input(placeholder="Enter YouTube URL...", id="url-input")
-            yield Button("Start", id="start-btn", variant="primary")
+            yield Input(placeholder="Enter a YouTube URL:", id="url-input")
+            yield Button("Run", id="start-btn")
         with Vertical(id="main-content"):
             with Container(id="progress-container"):
-                yield Label("Progress")
+                yield Static("Progress", classes="section-title")
                 yield ProgressPanel(id="progress-panel")
             with Container(id="summary-container"):
-                yield Label("Summary")
+                yield Static("Summary", classes="section-title")
                 yield RichLog(id="summary", highlight=True, markup=True)
-            with Collapsible(title="Log", collapsed=True, id="log-collapsible"):
+            with Collapsible(title="Logs", collapsed=True, id="log-collapsible"):
                 yield RichLog(id="log", highlight=True, markup=True)
         yield Footer()
 
     def on_mount(self) -> None:
-        self.log_message("Ready. Enter a YouTube URL to begin.")
+        self.log_message("Ready. Enter a YouTube or yt-dlp compatible URL to begin.")
 
     def log_message(self, message: str) -> None:
         log = self.query_one("#log", RichLog)
