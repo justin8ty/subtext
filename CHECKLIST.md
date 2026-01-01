@@ -1,10 +1,10 @@
-## Updated Implementation Checklist (Python + Textual)
+## Checklist
 
 ### Core Stack
 - [x] Python
 - [x] Textual
 - [x] yt-dlp
-- [x] Google Generative AI SDK
+- [x] python-genai
 
 ### TUI (Textual)
 - [x] Single-screen layout
