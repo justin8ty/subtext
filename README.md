@@ -2,6 +2,8 @@
 
 An interactive TUI app for extracting YouTube subtitles and summarizing them with LLMs.
 
+![](demo.png)
+
 ## Features:
 - Extraction
 - Regex Processing
