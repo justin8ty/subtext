@@ -16,6 +16,7 @@ An interactive TUI app for extracting YouTube subtitles and summarizing them wit
 
 ```bash
 git clone https://github.com/justin8ty/subtext.git
+pip install uv
 uv sync
 ```
 
@@ -30,8 +31,7 @@ Config is stored at:
 ## Usage
 
 ```bash
-subtext
-uv run python -m subtext.main
+uv run subtext
 ```
 
 Paste a YouTube URL, hit Enter.

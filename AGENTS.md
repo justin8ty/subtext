@@ -16,7 +16,6 @@ uv sync
 
 # Run application
 uv run subtext
-uv run python -m subtext.main
 
 # Testing
 pytest                                          # all tests
