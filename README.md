@@ -1,6 +1,6 @@
 # Subtext
 
-An interactive TUI app for extracting YouTube subtitles and summarizing them with LLMs.
+An interactive TUI app for extracting YouTube subtitles and summarizing them with LLMs. Save time extracting insights without listening to hours-long podcasts.
 
 ![](demo.png)
 
