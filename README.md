@@ -27,6 +27,7 @@ Config is stored at:
 
 ```bash
 subtext
+uv run python -m subtext.main
 ```
 
 Paste a YouTube URL, hit Enter.
