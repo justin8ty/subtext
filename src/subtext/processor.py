@@ -13,25 +13,12 @@ def process_subtitles(raw_vtt: str) -> str:
         Cleaned transcript text.
     """
     text = raw_vtt
-
-    # Remove VTT header and metadata
     text = _remove_vtt_header(text)
-
-    # Remove timestamp lines
     text = _remove_timestamps(text)
-
-    # Remove sequence numbers
     text = _remove_sequence_numbers(text)
-
-    # Remove VTT/HTML tags
     text = _remove_tags(text)
-
-    # Normalize whitespace
     text = _normalize_whitespace(text)
-
-    # Deduplicate consecutive lines
     text = _deduplicate_lines(text)
-
     return text.strip()
 
 

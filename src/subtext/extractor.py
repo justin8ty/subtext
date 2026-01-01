@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import yt_dlp  # pyright: ignore[reportMissingModuleSource]
+import yt_dlp
 
 
 class ExtractionError(Exception):
