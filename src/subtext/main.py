@@ -48,11 +48,26 @@ class SubtextCommands(Provider):
                 help="Edit API keys, models, and prompts",
             )
 
+        score = matcher.match("Settings: Subtitles")
+        if score > 0:
+            yield Hit(
+                score,
+                matcher.highlight("Settings: Subtitles"),
+                self._open_subtitle_settings,
+                help="Configure subtitle language",
+            )
+
     async def _open_settings(self) -> None:
         """Open settings screen."""
         app = self.screen.app
         if isinstance(app, SubtextApp):
             app.action_open_settings()
+
+    async def _open_subtitle_settings(self) -> None:
+        """Open subtitle settings screen."""
+        app = self.screen.app
+        if isinstance(app, SubtextApp):
+            app.action_open_subtitle_settings()
 
 
 class SettingsScreen(Screen):
@@ -271,6 +286,124 @@ class SettingsScreen(Screen):
         self.dismiss(True)
 
     @on(Button.Pressed, "#cancel-btn")
+    def on_cancel_btn(self) -> None:
+        """Close screen without saving."""
+        self.dismiss(False)
+
+    def action_cancel(self) -> None:
+        """Handle escape key."""
+        self.dismiss(False)
+
+
+class SubtitleSettingsScreen(Screen):
+    """Settings screen for configuring subtitle options."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    CSS = """
+    SubtitleSettingsScreen {
+        align: center middle;
+    }
+
+    #subtitle-settings-container {
+        width: 50;
+        height: auto;
+        background: #0d1117;
+        border: round #5a8a9a;
+        padding: 1 2;
+    }
+
+    #subtitle-settings-title {
+        text-style: bold;
+        color: #a8d8ea;
+        text-align: center;
+        width: 100%;
+        padding-bottom: 1;
+    }
+
+    .subtitle-settings-row {
+        height: 3;
+        margin-bottom: 1;
+    }
+
+    .subtitle-field-label {
+        color: #a8d8ea;
+        width: 18;
+        padding-right: 1;
+    }
+
+    .subtitle-input {
+        width: 1fr;
+        background: #161b22;
+        border: tall #5a8a9a;
+    }
+
+    .subtitle-input:focus {
+        border: tall #a8d8ea;
+    }
+
+    #subtitle-button-row {
+        height: 3;
+        align: center middle;
+        padding-top: 1;
+    }
+
+    #subtitle-save-btn {
+        margin-right: 2;
+        background: #5a8a9a;
+        color: #e6edf3;
+        border: none;
+    }
+
+    #subtitle-save-btn:hover {
+        background: #a8d8ea;
+        color: #0d1117;
+    }
+
+    #subtitle-cancel-btn {
+        background: transparent;
+        color: #7d8590;
+        border: tall #7d8590;
+    }
+
+    #subtitle-cancel-btn:hover {
+        color: #e6edf3;
+        border: tall #e6edf3;
+    }
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        super().__init__()
+        self.settings = settings
+
+    def compose(self) -> ComposeResult:
+        with Container(id="subtitle-settings-container"):
+            yield Static("Subtitle Settings", id="subtitle-settings-title")
+
+            with Horizontal(classes="subtitle-settings-row"):
+                yield Static("Subtitle Language:", classes="subtitle-field-label")
+                yield Input(
+                    value=self.settings.subtitle_language,
+                    placeholder="e.g. en, es, ja",
+                    id="language-input",
+                    classes="subtitle-input",
+                )
+
+            with Horizontal(id="subtitle-button-row"):
+                yield Button("Save", id="subtitle-save-btn", variant="primary")
+                yield Button("Cancel", id="subtitle-cancel-btn")
+
+    @on(Button.Pressed, "#subtitle-save-btn")
+    def on_save(self) -> None:
+        """Save settings to config file and close screen."""
+        language = self.query_one("#language-input", Input).value.strip()
+        self.settings.subtitle_language = language or "en"
+        self.settings.save()
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#subtitle-cancel-btn")
     def on_cancel_btn(self) -> None:
         """Close screen without saving."""
         self.dismiss(False)
@@ -794,6 +927,12 @@ class SubtextApp(App):
     def action_open_settings(self) -> None:
         """Open settings screen."""
         self.push_screen(SettingsScreen(self.settings), self._on_settings_closed)
+
+    def action_open_subtitle_settings(self) -> None:
+        """Open subtitle settings screen."""
+        self.push_screen(
+            SubtitleSettingsScreen(self.settings), self._on_settings_closed
+        )
 
     def _on_settings_closed(self, saved: bool | None) -> None:
         """Handle settings screen close."""

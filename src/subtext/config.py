@@ -90,7 +90,7 @@ DEFAULT_AGGREGATION_PROMPT = """You are given summaries of different parts of a 
 Combine them into a single coherent summary in markdown format.
 Include:
 - A brief overview (2-3 sentences)
-- Key points as bullet points
+- Key points as comprehensive bullet points
 - Any important details or takeaways
 
 Part summaries:
