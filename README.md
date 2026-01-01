@@ -5,8 +5,8 @@ An interactive TUI app for extracting YouTube subtitles and summarizing them wit
 ![](demo.png)
 
 ## Features:
-- Extraction
-- Regex Processing
+- Extraction (Support for multiple languages with priority fallback)
+- Regex Processing (Improve token efficiency)
 - Chunking
 - LLM Summary
 

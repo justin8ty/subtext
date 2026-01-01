@@ -132,7 +132,6 @@ class Settings:
     @classmethod
     def load(cls) -> "Settings":
         """Load settings from TOML config, with env vars as overrides."""
-        # Load from TOML file
         config = _load_toml(_get_config_path())
         llm_config = config.get("llm", {})
         output_config = config.get("output", {})

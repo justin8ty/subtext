@@ -308,11 +308,11 @@ class SubtitleSettingsScreen(Screen):
     }
 
     #subtitle-settings-container {
-        width: 50;
+        width: 70;
         height: auto;
         background: #0d1117;
         border: round #5a8a9a;
-        padding: 1 2;
+        padding: 1 1;
     }
 
     #subtitle-settings-title {
@@ -386,7 +386,7 @@ class SubtitleSettingsScreen(Screen):
                 yield Static("Subtitle Language:", classes="subtitle-field-label")
                 yield Input(
                     value=self.settings.subtitle_language,
-                    placeholder="e.g. en, es, ja",
+                    placeholder="e.g. en, fr, zh (comma-separated priority)",
                     id="language-input",
                     classes="subtitle-input",
                 )
@@ -442,7 +442,7 @@ class StageRow(Static):
     def set_running(self, message: str = "") -> None:
         self.status = self.RUNNING
         self._message = message
-        self._update_display("●", self.RUNNING, message)
+        self._update_display("◐", self.RUNNING, message)
 
     def set_complete(self, message: str = "") -> None:
         self.status = self.COMPLETE

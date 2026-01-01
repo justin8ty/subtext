@@ -31,7 +31,9 @@ async def extract_subtitles(url: str, language: str = "en") -> ExtractionResult:
 
     Args:
         url: YouTube video URL.
-        language: Subtitle language code (default: "en").
+        language: Subtitle language code(s). Supports comma-separated values
+                  for priority fallback (e.g., "en, ja, es" tries en first,
+                  then ja, then es).
 
     Returns:
         ExtractionResult with video metadata and raw subtitle text.
@@ -42,8 +44,17 @@ async def extract_subtitles(url: str, language: str = "en") -> ExtractionResult:
     return await asyncio.to_thread(_extract_sync, url, language)
 
 
+def _parse_languages(language: str) -> list[str]:
+    """Parse comma-separated language codes into a list."""
+    return [lang.strip() for lang in language.split(",") if lang.strip()]
+
+
 def _extract_sync(url: str, language: str) -> ExtractionResult:
     """Synchronous extraction implementation."""
+    languages = _parse_languages(language)
+    if not languages:
+        languages = ["en"]
+
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         output_template = str(temp_path / "%(id)s.%(ext)s")
@@ -52,7 +63,7 @@ def _extract_sync(url: str, language: str) -> ExtractionResult:
             "skip_download": True,
             "writesubtitles": True,
             "writeautomaticsub": True,
-            "subtitleslangs": [language],
+            "subtitleslangs": languages,
             "subtitlesformat": "vtt",
             "outtmpl": output_template,
             "quiet": True,
@@ -73,10 +84,13 @@ def _extract_sync(url: str, language: str) -> ExtractionResult:
         uploader: str = info.get("uploader") or "Unknown"
         duration: int = info.get("duration") or 0
 
-        # Find the subtitle file
-        subtitle_file = _find_subtitle_file(temp_path, video_id, language)
+        # Find the subtitle file (tries languages in priority order)
+        subtitle_file = _find_subtitle_file(temp_path, video_id, languages)
         if subtitle_file is None:
-            raise ExtractionError(f"No subtitles available for language '{language}'")
+            langs_str = ", ".join(languages)
+            raise ExtractionError(
+                f"No subtitles available for language(s): {langs_str}"
+            )
 
         raw_subtitles = subtitle_file.read_text(encoding="utf-8")
 
@@ -89,27 +103,30 @@ def _extract_sync(url: str, language: str) -> ExtractionResult:
         )
 
 
-def _find_subtitle_file(temp_path: Path, video_id: str, language: str) -> Path | None:
+def _find_subtitle_file(
+    temp_path: Path, video_id: str, languages: list[str]
+) -> Path | None:
     """Find the downloaded subtitle file.
 
     Args:
         temp_path: Temporary directory containing downloaded files.
         video_id: YouTube video ID.
-        language: Subtitle language code.
+        languages: List of subtitle language codes in priority order.
 
     Returns:
         Path to subtitle file, or None if not found.
     """
-    # yt-dlp names files as: {video_id}.{lang}.vtt
-    patterns = [
-        f"{video_id}.{language}.vtt",
-        f"{video_id}.{language}*.vtt",
-    ]
+    # Try each language in priority order
+    for language in languages:
+        patterns = [
+            f"{video_id}.{language}.vtt",
+            f"{video_id}.{language}*.vtt",
+        ]
 
-    for pattern in patterns:
-        matches = list(temp_path.glob(pattern))
-        if matches:
-            return matches[0]
+        for pattern in patterns:
+            matches = list(temp_path.glob(pattern))
+            if matches:
+                return matches[0]
 
     # Fallback: any .vtt file
     vtt_files = list(temp_path.glob("*.vtt"))
