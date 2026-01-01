@@ -42,3 +42,7 @@ Summaries saved to `./output/` as Markdown.
 | `Ctrl+Y` | Copy summary |
 | `Ctrl+L` | Toggle logs |
 | `Ctrl+C` | Quit |
+
+## Tech Stack
+
+Python, Textual, yt-dlp, Gemini/OpenAI SDK
