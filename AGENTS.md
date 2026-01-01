@@ -1,25 +1,22 @@
 # AGENTS.md - Subtext Development Guide
 
-This document provides guidelines for AI agents and developers working on the Subtext codebase.
+Guidelines for AI agents and developers working on the Subtext codebase.
 
 ## Project Overview
 
 Subtext is a TUI-based tool for extracting YouTube subtitles and summarizing them using LLMs.
 
-**Tech Stack:** Python 3.10+, Textual, yt-dlp, Google Generative AI / OpenAI SDK, uv
+**Tech Stack:** Python 3.14+, Textual, yt-dlp, Google Generative AI / OpenAI SDK, uv
 
 ## Build, Run, and Test Commands
 
 ```bash
 # Install with uv
-# Don't use uv pip install
-uv venv
-uv add textual yt-dlp google-genai openai tiktoken python-dotenv
 uv sync
 
 # Run application
-subtext                      # via entry point
-python -m subtext.main       # directly
+uv run subtext
+uv run python -m subtext.main
 
 # Testing
 pytest                                          # all tests
@@ -34,6 +31,16 @@ ruff check src/ --fix        # auto-fix
 black src/                   # format
 black src/ --check           # check only
 ```
+
+## Configuration
+
+Settings are stored in a TOML file:
+- **Windows:** `%APPDATA%\subtext\config.toml`
+- **Unix:** `~/.config/subtext/config.toml`
+
+Users configure via TUI: `Ctrl+P` → "Settings"
+
+Environment variables can override TOML values (for CI/scripting).
 
 ## Code Style Guidelines
 
@@ -128,7 +135,7 @@ async def run_pipeline(url: str, cancel: asyncio.Event) -> str:
 subtext/
 ├── src/subtext/
 │   ├── __init__.py      # Package init, version
-│   ├── config.py        # Configuration, env loading
+│   ├── config.py        # Configuration (TOML-based)
 │   ├── extractor.py     # yt-dlp subtitle extraction
 │   ├── processor.py     # Subtitle text cleaning
 │   ├── chunker.py       # Text chunking logic
@@ -172,3 +179,4 @@ async def test_summarize_with_gemini(mock_model):
 - Bind Ctrl+X to cancel, use `self.run_worker()` for background tasks
 - Check cancellation at pipeline stage boundaries
 - Use Textual's reactive system for state management
+- Settings screens accessed via Command Palette (`Ctrl+P`)
