@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from pathlib import Path
 from typing import ClassVar, Iterable
 
 from textual import on, work
@@ -29,7 +28,6 @@ from subtext.config import Settings
 from subtext.extractor import ExtractionError, ExtractionResult, extract_subtitles
 from subtext.processor import process_subtitles
 from subtext.summarizer import SummarizationError, summarize
-
 
 # Shared CSS for settings screens (layout only, colors from theme)
 SETTINGS_SCREEN_CSS = """
@@ -420,6 +418,12 @@ class SubtextApp(App):
         margin-left: 1;
     }
 
+    #stop-btn {
+        width: 8;
+        min-width: 8;
+        margin-left: 1;
+    }
+
     #main-content {
         height: 1fr;
         padding: 0 1;
@@ -512,6 +516,7 @@ CommandList {
         with Horizontal(id="input-row"):
             yield Input(placeholder="Enter a YouTube URL:", id="url-input")
             yield Button("Run", id="start-btn")
+            yield Button("Stop", id="stop-btn", variant="error", disabled=True)
         with Vertical(id="main-content"):
             with Container(id="progress-container"):
                 yield Static("Progress", classes="section-title")
@@ -549,6 +554,14 @@ CommandList {
     def on_url_submitted(self) -> None:
         self.start_pipeline()
 
+    @on(Button.Pressed, "#stop-btn")
+    def on_stop_pressed(self) -> None:
+        """Handle stop button press."""
+        if self.cancel_event:
+            self.cancel_event.set()
+            self.query_one("#stop-btn", Button).disabled = True
+            self.log_message("[yellow]Cancellation requested...[/yellow]")
+
     def start_pipeline(self) -> None:
         if self.pipeline_running:
             self.log_message("[yellow]Pipeline already running...[/yellow]")
@@ -568,6 +581,10 @@ CommandList {
         self.cancel_event = asyncio.Event()
         self.extraction_result = None
         self.raw_char_count = 0
+
+        # Update button states
+        self.query_one("#start-btn", Button).disabled = True
+        self.query_one("#stop-btn", Button).disabled = False
 
         # Clear previous state
         self.query_one("#summary", RichLog).clear()
@@ -608,6 +625,9 @@ CommandList {
         finally:
             self.pipeline_running = False
             self.cancel_event = None
+            # Reset button states
+            self.query_one("#start-btn", Button).disabled = False
+            self.query_one("#stop-btn", Button).disabled = True
 
     async def _run_extraction(self, url: str) -> None:
         stage = self.query_one("#stage-extract", StageRow)
