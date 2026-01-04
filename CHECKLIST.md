@@ -25,10 +25,11 @@
 - [x] Removed python-dotenv dependency
 
 ### Task Cancellation
-- [ ] Gracefully terminate yt-dlp subprocess on cancel
-- [ ] Abort pending / in-flight LLM requests
+- [x] Gracefully terminate yt-dlp subprocess on cancel
+- [x] Abort pending / in-flight LLM requests
 - [x] Reset UI state after cancellation
-- [ ] Ensure no background tasks continue running
+- [x] Stop button for cancellation
+- [x] Ensure no background tasks continue running
 
 ### Subtitle Extraction
 - [x] Fetch manual subtitles if available

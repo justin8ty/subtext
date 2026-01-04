@@ -561,6 +561,7 @@ CommandList {
             self.cancel_event.set()
             self.query_one("#stop-btn", Button).disabled = True
             self.log_message("[yellow]Cancellation requested...[/yellow]")
+            self.workers.cancel_all()
 
     def start_pipeline(self) -> None:
         if self.pipeline_running:
