@@ -44,7 +44,7 @@
 
 ### Chunking
 - [x] Token- or length-based chunking
-- [x] Configurable chunk size, use best practices by default
+- [x] Configurable chunk size
 - [x] Small overlap between chunks
 
 ### LLM Summarization
@@ -59,6 +59,5 @@
 - [x] Copy-to-clipboard support (Ctrl+Y)
 
 ### Error Handling & Cleanup
-- [ ] Clear error states (no subtitles, API failure)
 - [x] Temporary directory per run
-- [ ] Guaranteed cleanup on success / failure / cancel
+- [x] Guaranteed cleanup on success / failure / cancel
