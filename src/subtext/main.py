@@ -17,6 +17,7 @@ from textual.widgets import (
     Button,
     Collapsible,
     Footer,
+    Header,
     Input,
     Label,
     RichLog,
@@ -450,7 +451,6 @@ class SubtextApp(App):
     COMMANDS = App.COMMANDS | {SubtextCommands}
     CSS = """
     #input-row {
-        dock: top;
         height: 3;
         padding: 0 1;
         margin: 0 0 1 0;
@@ -551,6 +551,7 @@ class SubtextApp(App):
         self.raw_char_count = 0
 
     def compose(self) -> ComposeResult:
+        yield Header()
         with Horizontal(id="input-row"):
             yield Input(placeholder="Enter a YouTube URL:", id="url-input")
             yield Button("Run", id="start-btn")
