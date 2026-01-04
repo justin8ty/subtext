@@ -32,6 +32,79 @@ from subtext.processor import process_subtitles
 from subtext.summarizer import SummarizationError, summarize
 
 
+# Shared CSS for settings screens (layout only, colors from theme)
+SETTINGS_SCREEN_CSS = """
+    .settings-screen {
+        align: center middle;
+    }
+
+    .settings-container {
+        width: 90%;
+        height: 90%;
+        padding: 1 2;
+    }
+
+    .settings-container-small {
+        width: 70;
+        height: auto;
+        padding: 1 1;
+    }
+
+    .settings-title {
+        text-style: bold;
+        text-align: center;
+        width: 100%;
+        padding-bottom: 1;
+    }
+
+    .settings-row {
+        height: 3;
+        margin-bottom: 1;
+    }
+
+    .field-label {
+        width: 12;
+        padding-right: 1;
+    }
+
+    .field-label-wide {
+        width: 18;
+        padding-right: 1;
+    }
+
+    .settings-select {
+        width: 20;
+    }
+
+    .settings-input {
+        width: 1fr;
+    }
+
+    .prompt-section {
+        height: 1fr;
+        margin-bottom: 1;
+    }
+
+    .prompt-label {
+        padding-bottom: 0;
+    }
+
+    .prompt-textarea {
+        height: 1fr;
+    }
+
+    .button-row {
+        height: 3;
+        align: center middle;
+        padding-top: 1;
+    }
+
+    .save-btn {
+        margin-right: 2;
+    }
+"""
+
+
 class SubtextCommands(Provider):
     """Command palette provider for Subtext settings."""
 
@@ -77,110 +150,15 @@ class SettingsScreen(Screen):
         Binding("escape", "cancel", "Cancel"),
     ]
 
-    CSS = """
-    SettingsScreen {
-        align: center middle;
-    }
-
-    #settings-container {
-        width: 90%;
-        height: 90%;
-        background: #0d1117;
-        border: round #5a8a9a;
-        padding: 1 2;
-    }
-
-    #settings-title {
-        text-style: bold;
-        color: #a8d8ea;
-        text-align: center;
-        width: 100%;
-        padding-bottom: 1;
-    }
-
-    .settings-row {
-        height: 3;
-        margin-bottom: 1;
-    }
-
-    .field-label {
-        color: #a8d8ea;
-        width: 12;
-        padding-right: 1;
-    }
-
-    #provider-select {
-        width: 20;
-        background: #161b22;
-    }
-
-    .settings-input {
-        width: 1fr;
-        background: #161b22;
-        border: tall #5a8a9a;
-    }
-
-    .settings-input:focus {
-        border: tall #a8d8ea;
-    }
-
-    .prompt-section {
-        height: 1fr;
-        margin-bottom: 1;
-    }
-
-    .prompt-label {
-        color: #a8d8ea;
-        padding-bottom: 0;
-    }
-
-    .prompt-textarea {
-        height: 1fr;
-        background: #161b22;
-        border: tall #5a8a9a;
-    }
-
-    .prompt-textarea:focus {
-        border: tall #a8d8ea;
-    }
-
-    #button-row {
-        height: 3;
-        align: center middle;
-        padding-top: 1;
-    }
-
-    #save-btn {
-        margin-right: 2;
-        background: #5a8a9a;
-        color: #e6edf3;
-        border: none;
-    }
-
-    #save-btn:hover {
-        background: #a8d8ea;
-        color: #0d1117;
-    }
-
-    #cancel-btn {
-        background: transparent;
-        color: #7d8590;
-        border: tall #7d8590;
-    }
-
-    #cancel-btn:hover {
-        color: #e6edf3;
-        border: tall #e6edf3;
-    }
-    """
+    CSS = SETTINGS_SCREEN_CSS
 
     def __init__(self, settings: Settings) -> None:
         super().__init__()
         self.settings = settings
 
     def compose(self) -> ComposeResult:
-        with Container(id="settings-container"):
-            yield Static("Settings", id="settings-title")
+        with Container(classes="settings-container"):
+            yield Static("Settings", classes="settings-title")
 
             # Provider row
             with Horizontal(classes="settings-row"):
@@ -188,7 +166,7 @@ class SettingsScreen(Screen):
                 yield Select(
                     [("Gemini", "gemini"), ("OpenAI", "openai")],
                     value=self.settings.llm_provider,
-                    id="provider-select",
+                    classes="settings-select",
                 )
 
             # Model row
@@ -230,8 +208,10 @@ class SettingsScreen(Screen):
                     classes="prompt-textarea",
                 )
 
-            with Horizontal(id="button-row"):
-                yield Button("Save", id="save-btn", variant="primary")
+            with Horizontal(classes="button-row"):
+                yield Button(
+                    "Save", id="save-btn", variant="primary", classes="save-btn"
+                )
                 yield Button("Cancel", id="cancel-btn")
 
     def _get_current_model(self) -> str:
@@ -246,7 +226,7 @@ class SettingsScreen(Screen):
             return self.settings.openai_api_key
         return self.settings.gemini_api_key
 
-    @on(Select.Changed, "#provider-select")
+    @on(Select.Changed, ".settings-select")
     def on_provider_changed(self, event: Select.Changed) -> None:
         """Update model and API key fields when provider changes."""
         model_input = self.query_one("#model-input", Input)
@@ -262,7 +242,7 @@ class SettingsScreen(Screen):
     def on_save(self) -> None:
         """Save settings to config file and close screen."""
         # Get values from form
-        provider_select = self.query_one("#provider-select", Select)
+        provider_select = self.query_one(".settings-select", Select)
         provider = str(provider_select.value) if provider_select.value else "gemini"
         model = self.query_one("#model-input", Input).value.strip()
         api_key = self.query_one("#api-key-input", Input).value.strip()
@@ -302,100 +282,32 @@ class SubtitleSettingsScreen(Screen):
         Binding("escape", "cancel", "Cancel"),
     ]
 
-    CSS = """
-    SubtitleSettingsScreen {
-        align: center middle;
-    }
-
-    #subtitle-settings-container {
-        width: 70;
-        height: auto;
-        background: #0d1117;
-        border: round #5a8a9a;
-        padding: 1 1;
-    }
-
-    #subtitle-settings-title {
-        text-style: bold;
-        color: #a8d8ea;
-        text-align: center;
-        width: 100%;
-        padding-bottom: 1;
-    }
-
-    .subtitle-settings-row {
-        height: 3;
-        margin-bottom: 1;
-    }
-
-    .subtitle-field-label {
-        color: #a8d8ea;
-        width: 18;
-        padding-right: 1;
-    }
-
-    .subtitle-input {
-        width: 1fr;
-        background: #161b22;
-        border: tall #5a8a9a;
-    }
-
-    .subtitle-input:focus {
-        border: tall #a8d8ea;
-    }
-
-    #subtitle-button-row {
-        height: 3;
-        align: center middle;
-        padding-top: 1;
-    }
-
-    #subtitle-save-btn {
-        margin-right: 2;
-        background: #5a8a9a;
-        color: #e6edf3;
-        border: none;
-    }
-
-    #subtitle-save-btn:hover {
-        background: #a8d8ea;
-        color: #0d1117;
-    }
-
-    #subtitle-cancel-btn {
-        background: transparent;
-        color: #7d8590;
-        border: tall #7d8590;
-    }
-
-    #subtitle-cancel-btn:hover {
-        color: #e6edf3;
-        border: tall #e6edf3;
-    }
-    """
+    CSS = SETTINGS_SCREEN_CSS
 
     def __init__(self, settings: Settings) -> None:
         super().__init__()
         self.settings = settings
 
     def compose(self) -> ComposeResult:
-        with Container(id="subtitle-settings-container"):
-            yield Static("Subtitle Settings", id="subtitle-settings-title")
+        with Container(classes="settings-container-small"):
+            yield Static("Subtitle Settings", classes="settings-title")
 
-            with Horizontal(classes="subtitle-settings-row"):
-                yield Static("Subtitle Language:", classes="subtitle-field-label")
+            with Horizontal(classes="settings-row"):
+                yield Static("Subtitle Language:", classes="field-label-wide")
                 yield Input(
                     value=self.settings.subtitle_language,
                     placeholder="e.g. en, fr, zh (comma-separated priority)",
                     id="language-input",
-                    classes="subtitle-input",
+                    classes="settings-input",
                 )
 
-            with Horizontal(id="subtitle-button-row"):
-                yield Button("Save", id="subtitle-save-btn", variant="primary")
-                yield Button("Cancel", id="subtitle-cancel-btn")
+            with Horizontal(classes="button-row"):
+                yield Button(
+                    "Save", id="save-btn", variant="primary", classes="save-btn"
+                )
+                yield Button("Cancel", id="cancel-btn")
 
-    @on(Button.Pressed, "#subtitle-save-btn")
+    @on(Button.Pressed, "#save-btn")
     def on_save(self) -> None:
         """Save settings to config file and close screen."""
         language = self.query_one("#language-input", Input).value.strip()
@@ -403,7 +315,7 @@ class SubtitleSettingsScreen(Screen):
         self.settings.save()
         self.dismiss(True)
 
-    @on(Button.Pressed, "#subtitle-cancel-btn")
+    @on(Button.Pressed, "#cancel-btn")
     def on_cancel_btn(self) -> None:
         """Close screen without saving."""
         self.dismiss(False)
@@ -416,10 +328,10 @@ class SubtitleSettingsScreen(Screen):
 class StageRow(Static):
     """A single pipeline stage with status icon and message."""
 
-    PENDING = "#7d8590"
-    RUNNING = "#d29922"
-    COMPLETE = "#3fb950"
-    ERROR = "#f85149"
+    PENDING = "gray"
+    RUNNING = "yellow"
+    COMPLETE = "green"
+    ERROR = "red"
 
     def __init__(self, stage_id: str, label: str, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -483,21 +395,6 @@ class SubtextApp(App):
     TITLE = "Subtext"
     COMMANDS = App.COMMANDS | {SubtextCommands}
     CSS = """
-    $accent: #a8d8ea;
-    $accent-dim: #5a8a9a;
-    $bg: #0d1117;
-    $bg-light: #161b22;
-    $fg: #e6edf3;
-    $fg-muted: #7d8590;
-    $success: #3fb950;
-    $warning: #d29922;
-    $error: #f85149;
-
-    Screen {
-        background: $bg;
-        color: $fg;
-    }
-
     #input-row {
         dock: top;
         height: 3;
@@ -507,34 +404,13 @@ class SubtextApp(App):
 
     #url-input {
         width: 1fr;
-        background: $bg-light;
-        border: tall $accent-dim;
-        color: $fg;
         padding: 0 1;
-    }
-
-    #url-input:focus {
-        border: tall $accent;
     }
 
     #start-btn {
         width: 8;
         min-width: 8;
         margin-left: 1;
-        background: transparent;
-        color: $accent;
-        border: tall $accent-dim;
-        text-style: none;
-    }
-
-    #start-btn:hover {
-        background: $accent-dim;
-        color: $fg;
-        border: tall $accent;
-    }
-
-    #start-btn:focus {
-        border: tall $accent;
     }
 
     #main-content {
@@ -544,14 +420,11 @@ class SubtextApp(App):
 
     #progress-container {
         height: auto;
-        background: $bg-light;
-        border: round $accent-dim;
         padding: 0 1;
         margin-bottom: 1;
     }
 
     .section-title {
-        color: $accent;
         text-style: bold;
         padding: 0;
         margin: 0 0 0 0;
@@ -565,30 +438,24 @@ class SubtextApp(App):
 
     .stage-icon {
         width: 2;
-        color: $fg-muted;
     }
 
     .stage-label {
         width: 11;
-        color: $fg-muted;
     }
 
     .stage-message {
         width: 1fr;
-        color: $fg-muted;
     }
 
     #summary-container {
         height: 1fr;
-        background: $bg-light;
-        border: round $accent-dim;
         padding: 0 1;
         margin-bottom: 1;
     }
 
     #summary {
         height: 1fr;
-        background: $bg-light;
         padding: 0;
         scrollbar-size: 1 1;
     }
@@ -596,44 +463,23 @@ class SubtextApp(App):
     #log-collapsible {
         height: auto;
         max-height: 10;
-        background: $bg;
-        border: none;
         padding: 0;
     }
 
     #log-collapsible > Contents {
         height: 6;
         max-height: 6;
-        background: $bg-light;
-        border: round $accent-dim;
         padding: 0 1;
     }
 
     #log-collapsible CollapsibleTitle {
-        color: $fg-muted;
         padding: 0;
-        background: $bg;
-    }
-
-    #log-collapsible CollapsibleTitle:hover {
-        color: $accent;
     }
 
     #log {
         height: 100%;
-        background: $bg-light;
         padding: 0;
         scrollbar-size: 1 1;
-    }
-
-    Footer {
-        background: $bg;
-        color: $fg-muted;
-    }
-
-    Footer > .footer--key {
-        background: $accent-dim;
-        color: $fg;
     }
     """
 
