@@ -112,29 +112,44 @@ class SubtextCommands(Provider):
         """Search for settings commands."""
         matcher = self.matcher(query)
 
-        score = matcher.match("Settings: Configure LLM & Prompts")
+        score = matcher.match("Settings: Choose LLM")
         if score > 0:
             yield Hit(
                 score,
-                matcher.highlight("Settings: Configure LLM & Prompts"),
-                self._open_settings,
-                help="Edit API keys, models, and prompts",
+                matcher.highlight("Settings: Choose LLM"),
+                self._open_llm_settings,
+                help="Configure LLM provider, model, and API key",
             )
 
-        score = matcher.match("Settings: Subtitles")
+        score = matcher.match("Settings: Edit Prompts")
         if score > 0:
             yield Hit(
                 score,
-                matcher.highlight("Settings: Subtitles"),
+                matcher.highlight("Settings: Edit Prompts"),
+                self._open_prompt_settings,
+                help="Configure chunk and aggregation prompts",
+            )
+
+        score = matcher.match("Settings: Edit Subtitles")
+        if score > 0:
+            yield Hit(
+                score,
+                matcher.highlight("Settings: Edit Subtitles"),
                 self._open_subtitle_settings,
                 help="Configure subtitle language",
             )
 
-    async def _open_settings(self) -> None:
-        """Open settings screen."""
+    async def _open_llm_settings(self) -> None:
+        """Open LLM settings screen."""
         app = self.screen.app
         if isinstance(app, SubtextApp):
-            app.action_open_settings()
+            app.action_open_llm_settings()
+
+    async def _open_prompt_settings(self) -> None:
+        """Open prompt settings screen."""
+        app = self.screen.app
+        if isinstance(app, SubtextApp):
+            app.action_open_prompt_settings()
 
     async def _open_subtitle_settings(self) -> None:
         """Open subtitle settings screen."""
@@ -143,8 +158,8 @@ class SubtextCommands(Provider):
             app.action_open_subtitle_settings()
 
 
-class SettingsScreen(Screen):
-    """Settings screen for configuring LLM provider, API keys, and prompts."""
+class LLMSettingsScreen(Screen):
+    """Settings screen for configuring LLM provider and API keys."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel"),
@@ -157,8 +172,8 @@ class SettingsScreen(Screen):
         self.settings = settings
 
     def compose(self) -> ComposeResult:
-        with Container(classes="settings-container"):
-            yield Static("Settings", classes="settings-title")
+        with Container(classes="settings-container-small"):
+            yield Static("Choose LLM", classes="settings-title")
 
             # Provider row
             with Horizontal(classes="settings-row"):
@@ -188,24 +203,6 @@ class SettingsScreen(Screen):
                     password=True,
                     id="api-key-input",
                     classes="settings-input",
-                )
-
-            # Chunk Prompt
-            with Vertical(classes="prompt-section"):
-                yield Static("Chunk Prompt", classes="prompt-label")
-                yield TextArea(
-                    self.settings.chunk_prompt,
-                    id="chunk-prompt",
-                    classes="prompt-textarea",
-                )
-
-            # Aggregation Prompt
-            with Vertical(classes="prompt-section"):
-                yield Static("Aggregation Prompt", classes="prompt-label")
-                yield TextArea(
-                    self.settings.aggregation_prompt,
-                    id="aggregation-prompt",
-                    classes="prompt-textarea",
                 )
 
             with Horizontal(classes="button-row"):
@@ -246,8 +243,6 @@ class SettingsScreen(Screen):
         provider = str(provider_select.value) if provider_select.value else "gemini"
         model = self.query_one("#model-input", Input).value.strip()
         api_key = self.query_one("#api-key-input", Input).value.strip()
-        chunk_prompt = self.query_one("#chunk-prompt", TextArea).text
-        aggregation_prompt = self.query_one("#aggregation-prompt", TextArea).text
 
         # Update settings
         self.settings.llm_provider = provider
@@ -257,8 +252,6 @@ class SettingsScreen(Screen):
         else:
             self.settings.gemini_model = model or self.settings.gemini_model
             self.settings.gemini_api_key = api_key
-        self.settings.chunk_prompt = chunk_prompt
-        self.settings.aggregation_prompt = aggregation_prompt
 
         # Save to file
         self.settings.save()
@@ -290,7 +283,7 @@ class SubtitleSettingsScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Container(classes="settings-container-small"):
-            yield Static("Subtitle Settings", classes="settings-title")
+            yield Static("Edit Subtitles", classes="settings-title")
 
             with Horizontal(classes="settings-row"):
                 yield Static("Subtitle Language:", classes="field-label-wide")
@@ -312,6 +305,67 @@ class SubtitleSettingsScreen(Screen):
         """Save settings to config file and close screen."""
         language = self.query_one("#language-input", Input).value.strip()
         self.settings.subtitle_language = language or "en"
+        self.settings.save()
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#cancel-btn")
+    def on_cancel_btn(self) -> None:
+        """Close screen without saving."""
+        self.dismiss(False)
+
+    def action_cancel(self) -> None:
+        """Handle escape key."""
+        self.dismiss(False)
+
+
+class PromptSettingsScreen(Screen):
+    """Settings screen for configuring prompts."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    CSS = SETTINGS_SCREEN_CSS
+
+    def __init__(self, settings: Settings) -> None:
+        super().__init__()
+        self.settings = settings
+
+    def compose(self) -> ComposeResult:
+        with Container(classes="settings-container"):
+            yield Static("Edit Prompts", classes="settings-title")
+
+            # Chunk Prompt
+            with Vertical(classes="prompt-section"):
+                yield Static("Chunk Prompt", classes="prompt-label")
+                yield TextArea(
+                    self.settings.chunk_prompt,
+                    id="chunk-prompt",
+                    classes="prompt-textarea",
+                )
+
+            # Aggregation Prompt
+            with Vertical(classes="prompt-section"):
+                yield Static("Aggregation Prompt", classes="prompt-label")
+                yield TextArea(
+                    self.settings.aggregation_prompt,
+                    id="aggregation-prompt",
+                    classes="prompt-textarea",
+                )
+
+            with Horizontal(classes="button-row"):
+                yield Button(
+                    "Save", id="save-btn", variant="primary", classes="save-btn"
+                )
+                yield Button("Cancel", id="cancel-btn")
+
+    @on(Button.Pressed, "#save-btn")
+    def on_save(self) -> None:
+        """Save prompt settings and close screen."""
+        self.settings.chunk_prompt = self.query_one("#chunk-prompt", TextArea).text
+        self.settings.aggregation_prompt = self.query_one(
+            "#aggregation-prompt", TextArea
+        ).text
         self.settings.save()
         self.dismiss(True)
 
@@ -763,9 +817,13 @@ class SubtextApp(App):
         collapsible = self.query_one("#log-collapsible", Collapsible)
         collapsible.collapsed = not collapsible.collapsed
 
-    def action_open_settings(self) -> None:
-        """Open settings screen."""
-        self.push_screen(SettingsScreen(self.settings), self._on_settings_closed)
+    def action_open_llm_settings(self) -> None:
+        """Open LLM settings screen."""
+        self.push_screen(LLMSettingsScreen(self.settings), self._on_settings_closed)
+
+    def action_open_prompt_settings(self) -> None:
+        """Open prompt settings screen."""
+        self.push_screen(PromptSettingsScreen(self.settings), self._on_settings_closed)
 
     def action_open_subtitle_settings(self) -> None:
         """Open subtitle settings screen."""
