@@ -484,7 +484,6 @@ class SubtextApp(App):
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("ctrl+x", "cancel", "Cancel"),
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+l", "toggle_log", "Toggle Log"),
     ]
@@ -758,12 +757,6 @@ class SubtextApp(App):
             stage = self.query_one(stage_id, StageRow)
             if stage.status == StageRow.PENDING or stage.status == StageRow.RUNNING:
                 stage.set_error("Cancelled")
-
-    def action_cancel(self) -> None:
-        """Handle cancel action (Ctrl+X)."""
-        if self.cancel_event and self.pipeline_running:
-            self.cancel_event.set()
-            self.log_message("[yellow]Cancelling...[/yellow]")
 
     def action_toggle_log(self) -> None:
         """Toggle log panel visibility."""
