@@ -42,7 +42,6 @@ Summaries saved to `./output/` as Markdown.
 | Key | Action |
 |-----|--------|
 | `Ctrl+P` | Command palette (settings) |
-| `Ctrl+X` | Cancel |
 | `Ctrl+Y` | Copy summary |
 | `Ctrl+L` | Toggle logs |
 | `Ctrl+C` | Quit |

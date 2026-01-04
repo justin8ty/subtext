@@ -5,12 +5,11 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Iterable
 
 from textual import on, work
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding, BindingType
-from textual.command import Hit, Hits, Provider
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import (
@@ -103,59 +102,6 @@ SETTINGS_SCREEN_CSS = """
         margin-right: 2;
     }
 """
-
-
-class SubtextCommands(Provider):
-    """Command palette provider for Subtext settings."""
-
-    async def search(self, query: str) -> Hits:
-        """Search for settings commands."""
-        matcher = self.matcher(query)
-
-        score = matcher.match("Settings: Choose LLM")
-        if score > 0:
-            yield Hit(
-                score,
-                matcher.highlight("Settings: Choose LLM"),
-                self._open_llm_settings,
-                help="Configure LLM provider, model, and API key",
-            )
-
-        score = matcher.match("Settings: Edit Prompts")
-        if score > 0:
-            yield Hit(
-                score,
-                matcher.highlight("Settings: Edit Prompts"),
-                self._open_prompt_settings,
-                help="Configure chunk and aggregation prompts",
-            )
-
-        score = matcher.match("Settings: Edit Subtitles")
-        if score > 0:
-            yield Hit(
-                score,
-                matcher.highlight("Settings: Edit Subtitles"),
-                self._open_subtitle_settings,
-                help="Configure subtitle language",
-            )
-
-    async def _open_llm_settings(self) -> None:
-        """Open LLM settings screen."""
-        app = self.screen.app
-        if isinstance(app, SubtextApp):
-            app.action_open_llm_settings()
-
-    async def _open_prompt_settings(self) -> None:
-        """Open prompt settings screen."""
-        app = self.screen.app
-        if isinstance(app, SubtextApp):
-            app.action_open_prompt_settings()
-
-    async def _open_subtitle_settings(self) -> None:
-        """Open subtitle settings screen."""
-        app = self.screen.app
-        if isinstance(app, SubtextApp):
-            app.action_open_subtitle_settings()
 
 
 class LLMSettingsScreen(Screen):
@@ -447,7 +393,6 @@ class SubtextApp(App):
     """Subtext TUI application."""
 
     TITLE = "Subtext"
-    COMMANDS = App.COMMANDS | {SubtextCommands}
     CSS = """
     #title-bar {
         dock: top;
@@ -538,10 +483,14 @@ class SubtextApp(App):
         padding: 0;
     }
 
-    #log {
+#log {
         height: 100%;
         padding: 0;
         scrollbar-size: 1 1;
+    }
+
+CommandList {
+        max-height: 16;
     }
     """
 
@@ -844,6 +793,33 @@ class SubtextApp(App):
         """Handle settings screen close."""
         if saved:
             self.log_message("[green]Settings saved.[/green]")
+
+    def get_system_commands(self, screen: Screen) -> Iterable[SystemCommand]:
+        """Get system commands sorted alphabetically."""
+        commands = list(super().get_system_commands(screen))
+        commands.append(
+            SystemCommand(
+                "Settings: Choose LLM",
+                "Configure LLM provider, model, and API key",
+                self.action_open_llm_settings,
+            )
+        )
+        commands.append(
+            SystemCommand(
+                "Settings: Edit Prompts",
+                "Configure chunk and aggregation prompts",
+                self.action_open_prompt_settings,
+            )
+        )
+        commands.append(
+            SystemCommand(
+                "Settings: Edit Subtitles",
+                "Configure subtitle language",
+                self.action_open_subtitle_settings,
+            )
+        )
+        commands.sort(key=lambda cmd: cmd.title.lower())
+        yield from commands
 
     async def action_quit(self) -> None:
         """Handle quit action (Ctrl+C)."""

@@ -8,11 +8,11 @@
 
 ### TUI (Textual)
 - [x] Single-screen layout
+- [x] Header / title bar
 - [x] URL input field
 - [x] Status / progress indicators per pipeline stage
 - [x] Scrollable log/output pane
 - [x] Final summary view
-- [x] Global cancel action (keyboard-triggered)
 - [x] Settings screen (Ctrl+P → "Settings")
 
 ### Settings & Configuration
