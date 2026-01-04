@@ -449,8 +449,16 @@ class SubtextApp(App):
     TITLE = "Subtext"
     COMMANDS = App.COMMANDS | {SubtextCommands}
     CSS = """
-    #input-row {
+    #title-bar {
         dock: top;
+        width: 100%;
+        height: 1;
+        text-align: center;
+        text-style: bold;
+        background: $panel;
+    }
+
+    #input-row {
         height: 3;
         padding: 0 1;
         margin: 0 0 1 0;
@@ -551,6 +559,7 @@ class SubtextApp(App):
         self.raw_char_count = 0
 
     def compose(self) -> ComposeResult:
+        yield Static("Subtext", id="title-bar")
         with Horizontal(id="input-row"):
             yield Input(placeholder="Enter a YouTube URL:", id="url-input")
             yield Button("Run", id="start-btn")
