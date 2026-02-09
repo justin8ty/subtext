@@ -1,6 +1,6 @@
-# AGENTS.md - Subtext Development Guide
+# GUIDE.md - Subtext Development Guide
 
-Guidelines for AI agents and developers working on the Subtext codebase.
+Guidelines for working on the Subtext codebase.
 
 ## Project Overview
 
