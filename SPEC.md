@@ -16,6 +16,8 @@ Subtext is a Windows 11, local-first terminal app for understanding a public, co
 5. Generate and print a transcript-grounded Summary.
 6. Retain reusable Video Artifacts under `~/.subtext`.
 
+The YouTube video ID is the durable identity: URL variants reuse an existing Transcript unless the user chooses Refresh in the app. A Transcript Candidate must be non-empty and plausibly cover the Source Video; needs-input, unavailable, blocked, failed, and cancelled outcomes are never presented as completed.
+
 Translated captions, translated audio, live streams, playlists, private videos, and alternate audio tracks are excluded.
 
 ## Terminal experience
@@ -28,6 +30,8 @@ Translated captions, translated audio, live streams, playlists, private videos, 
 - ASR Transcript Drafts stream into scrollback
 - Cancellation leaves an explicit incomplete marker but saves no draft
 - First-run setup handles LLM authentication, model selection, and ASR preparation
+- Rendered timestamps link to the corresponding position in the Source Video when the terminal supports hyperlinks
+- Options persist only intent-level choices: provider/model, summary detail, ASR quality, and runtime update/repair; low-level engine settings remain automatic
 
 ## Artifacts
 
@@ -36,6 +40,8 @@ Retain:
 - Canonical timestamped Transcript with metadata and provenance
 - Selected raw Caption Track when used
 - Current Summary when available
+
+Normalize deterministically by removing rolling-caption duplication and repairing timing, cue boundaries, and whitespace without rewriting source wording. Commit the completed Transcript and source evidence before treating acquisition as successful; commit the Summary independently so its failure never rolls back the Transcript.
 
 Delete downloaded audio and processing intermediates after success. Derived Markdown, text, VTT, and SRT exports are generated on demand. A completed Transcript survives Summary failure and can be summarized later.
 
