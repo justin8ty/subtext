@@ -1,0 +1,3 @@
+# Use an app-first scrollback interface
+
+Running `subtext` opens a focused URL editor in an interactive primary-buffer application; submitting a URL starts immediately, while typing `/` opens a searchable palette whose stable destinations include Library, Options, Help, and Quit. Workflow and configuration are not exposed as CLI flags: progress, selectors, onboarding, and saved intent-level options remain transient UI, while Transcript output and Summaries use terminal scrollback for native search and copying. One Source Video may process at a time, but Library, Help, and future-job Options remain usable during long ASR work; additional URLs are rejected rather than queued.
