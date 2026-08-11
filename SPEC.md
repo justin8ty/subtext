@@ -11,9 +11,9 @@ Media acquisition, ASR, Transcript normalization, and artifact storage remain lo
 1. Launch with `subtext`.
 2. Paste a YouTube URL into the focused editor.
 3. Select a Transcript Candidate in this order:
-   - Creator-provided original-language captions
-   - Auto-generated original-language captions
-   - Local ASR from Default Audio
+   - Creator-provided Eligible Caption Track
+   - Automatic Eligible Caption Track
+   - ASR Transcript from Default Audio
 4. Print the timestamped Transcript.
 5. Generate and print a transcript-grounded Summary.
 6. Retain reusable Video Artifacts under `~/.subtext`.
@@ -42,7 +42,7 @@ Translated captions, translated audio, live streams, playlists, private videos, 
 
 Retain:
 
-- Canonical `transcript.json` with timestamped segments, source metadata, and provenance
+- Canonical `transcript.json` with timestamped segments, source metadata, and Transcript Provenance
 - Selected raw Caption Track when captions were used
 - Current `summary.md` when available
 
