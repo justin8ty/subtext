@@ -4,6 +4,8 @@
 
 Subtext is a Windows 11, local-first terminal app for understanding a public, completed, single YouTube video without watching it.
 
+Media acquisition, ASR, Transcript normalization, and artifact storage remain local. Only Transcript-derived text may be sent to the user-configured LLM provider.
+
 ## Workflow
 
 1. Launch with `subtext`.
@@ -27,6 +29,9 @@ Translated captions, translated audio, live streams, playlists, private videos, 
 - No workflow/configuration flag sprawl
 - One active Source Video at a time
 - Library and Help remain available during processing
+- Additional URLs are rejected rather than queued
+- Options changed during processing apply only to future work
+- Library actions are contextual: print, regenerate Summary, export, open the Source Video or artifact directory, and delete with confirmation
 - ASR Transcript Drafts stream into scrollback
 - Cancellation leaves an explicit incomplete marker but saves no draft
 - First-run setup handles LLM authentication, model selection, and ASR preparation
@@ -37,9 +42,9 @@ Translated captions, translated audio, live streams, playlists, private videos, 
 
 Retain:
 
-- Canonical timestamped Transcript with metadata and provenance
-- Selected raw Caption Track when used
-- Current Summary when available
+- Canonical `transcript.json` with timestamped segments, source metadata, and provenance
+- Selected raw Caption Track when captions were used
+- Current `summary.md` when available
 
 Normalize deterministically by removing rolling-caption duplication and repairing timing, cue boundaries, and whitespace without rewriting source wording. Commit the completed Transcript and source evidence before treating acquisition as successful; commit the Summary independently so its failure never rolls back the Transcript.
 
