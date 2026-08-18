@@ -12,18 +12,28 @@ import {
   type TuiInputListenerResult,
 } from "@earendil-works/pi-tui";
 
-import type { AcquisitionOptions, AcquisitionOutcome } from "../acquisition/acquire-transcript.js";
+import type {
+  SummaryProcessingOptions,
+  SummaryProcessingOutcome,
+  TranscriptReady,
+  VideoProcessingOptions,
+  VideoProcessingOutcome,
+} from "../processing/process-video.js";
 import { HelpOverlay, Palette, type PaletteDestination } from "./palette.js";
+import { SummaryView } from "./summary-view.js";
 import { TranscriptView } from "./transcript-view.js";
 
-export interface TranscriptAcquisition {
-  acquire(sourceUrl: string, options?: AcquisitionOptions): Promise<AcquisitionOutcome>;
+export interface SourceVideoProcessing {
+  process(sourceUrl: string, options?: VideoProcessingOptions): Promise<VideoProcessingOutcome>;
+  summarize(videoId: string, options?: SummaryProcessingOptions): Promise<SummaryProcessingOutcome>;
 }
 
-interface ActiveAcquisition {
+interface ActiveProcessing {
   readonly id: number;
+  readonly kind: "video" | "summary";
   readonly controller: AbortController;
   cancellationRequested: boolean;
+  transcriptRendered: boolean;
 }
 
 const PLAIN_SELECT_THEME: SelectListTheme = {
@@ -41,19 +51,20 @@ const EDITOR_THEME: EditorTheme = {
 
 export class SubtextApp extends Container {
   private readonly tui: TUI;
-  private readonly acquisition: TranscriptAcquisition;
+  private readonly processing: SourceVideoProcessing;
   private readonly history = new Container();
   private readonly status = new Text("Ready. Paste a YouTube URL and press Enter.", 0, 0);
   private readonly editor: Editor;
   private removeInputListener: (() => void) | null = null;
-  private activeAcquisition: ActiveAcquisition | null = null;
-  private nextAcquisitionId = 1;
+  private activeProcessing: ActiveProcessing | null = null;
+  private latestTranscriptVideoId: string | null = null;
+  private nextProcessingId = 1;
   private stopped = false;
 
-  constructor(tui: TUI, acquisition: TranscriptAcquisition) {
+  constructor(tui: TUI, processing: SourceVideoProcessing) {
     super();
     this.tui = tui;
-    this.acquisition = acquisition;
+    this.processing = processing;
     this.editor = new Editor(tui, EDITOR_THEME, { paddingX: 1, autocompleteMaxVisible: 4 });
     this.editor.onSubmit = (sourceUrl) => this.submit(sourceUrl);
 
@@ -63,7 +74,7 @@ export class SubtextApp extends Container {
     this.addChild(this.history);
     this.addChild(this.status);
     this.addChild(this.editor);
-    this.addChild(new Text("/ palette · Esc cancel · Ctrl+C quit", 0, 0));
+    this.addChild(new Text("/ palette · R regenerate Summary · Esc cancel · Ctrl+C quit", 0, 0));
   }
 
   start(): void {
@@ -84,10 +95,12 @@ export class SubtextApp extends Container {
     this.removeInputListener?.();
     this.removeInputListener = null;
 
-    if (this.activeAcquisition !== null) {
-      this.activeAcquisition.controller.abort();
-      this.appendMessage("Incomplete — Transcript acquisition cancelled because Subtext quit.");
-      this.activeAcquisition = null;
+    if (this.activeProcessing !== null) {
+      const incompleteWork =
+        this.activeProcessing.kind === "summary" ? "Summary generation" : "Transcript acquisition";
+      this.activeProcessing.controller.abort();
+      this.appendMessage(`Incomplete — ${incompleteWork} cancelled because Subtext quit.`);
+      this.activeProcessing = null;
     }
 
     this.status.setText("Stopped.");
@@ -97,10 +110,10 @@ export class SubtextApp extends Container {
 
   private handleGlobalInput(data: string): TuiInputListenerResult {
     if (matchesKey(data, Key.ctrl("c"))) {
-      if (this.activeAcquisition === null) {
+      if (this.activeProcessing === null) {
         this.stop();
       } else {
-        this.cancelActiveAcquisition();
+        this.cancelActiveProcessing();
       }
       return { consume: true };
     }
@@ -114,12 +127,17 @@ export class SubtextApp extends Container {
       return { consume: true };
     }
 
-    if (this.activeAcquisition !== null && matchesKey(data, Key.escape)) {
-      this.cancelActiveAcquisition();
+    if (data === "R" && this.editor.getText().trim() === "" && this.activeProcessing === null) {
+      this.regenerateLatestSummary();
       return { consume: true };
     }
 
-    if (this.activeAcquisition !== null && matchesKey(data, Key.enter)) {
+    if (this.activeProcessing !== null && matchesKey(data, Key.escape)) {
+      this.cancelActiveProcessing();
+      return { consume: true };
+    }
+
+    if (this.activeProcessing !== null && matchesKey(data, Key.enter)) {
       this.appendMessage("Another Source Video cannot be submitted while processing is active.");
       this.tui.requestRender();
       return { consume: true };
@@ -135,62 +153,88 @@ export class SubtextApp extends Container {
       this.tui.requestRender();
       return;
     }
-    if (this.activeAcquisition !== null) {
+    if (this.activeProcessing !== null) {
       this.appendMessage("Another Source Video cannot be submitted while processing is active.");
       this.tui.requestRender();
       return;
     }
 
-    const active: ActiveAcquisition = {
-      id: this.nextAcquisitionId,
-      controller: new AbortController(),
-      cancellationRequested: false,
-    };
-    this.nextAcquisitionId += 1;
-    this.activeAcquisition = active;
+    const active = this.beginProcessing("video");
     this.appendMessage(`Source Video: ${normalizedUrl}`);
-    this.status.setText("Inspecting the Source Video and acquiring a Transcript… Esc cancels.");
+    this.status.setText("Acquiring a Transcript, then generating its Summary… Esc cancels.");
     this.tui.requestRender();
-    void this.processAcquisition(normalizedUrl, active);
+    void this.processVideo(normalizedUrl, active);
   }
 
-  private async processAcquisition(sourceUrl: string, active: ActiveAcquisition): Promise<void> {
-    let outcome: AcquisitionOutcome;
+  private async processVideo(sourceUrl: string, active: ActiveProcessing): Promise<void> {
+    let outcome: VideoProcessingOutcome;
     try {
-      outcome = await this.acquisition.acquire(sourceUrl, { signal: active.controller.signal });
+      outcome = await this.processing.process(sourceUrl, {
+        signal: active.controller.signal,
+        onTranscript: (ready) => this.renderReadyTranscript(ready, active),
+      });
     } catch (error) {
       if (active.controller.signal.aborted) {
-        outcome = { status: "cancelled", message: "Transcript acquisition was cancelled." };
+        outcome = { status: "cancelled", message: "Source Video processing was cancelled." };
       } else if (error instanceof Error) {
-        outcome = { status: "failed", message: "Transcript acquisition failed.", cause: error };
+        outcome = { status: "failed", message: "Source Video processing failed.", cause: error };
       } else {
         outcome = {
           status: "failed",
-          message: "Transcript acquisition failed with an unrecognized error.",
+          message: "Source Video processing failed with an unrecognized error.",
         };
       }
     }
 
-    if (this.stopped || this.activeAcquisition?.id !== active.id) {
+    if (!this.finishProcessing(active)) {
       return;
     }
-    this.activeAcquisition = null;
-    this.renderOutcome(outcome);
-    if (!this.tui.hasOverlay()) {
-      this.tui.setFocus(this.editor);
-    }
+    this.renderVideoOutcome(outcome, active.transcriptRendered);
+    this.restoreEditorFocus();
     this.tui.requestRender();
   }
 
-  private renderOutcome(outcome: AcquisitionOutcome): void {
+  private renderReadyTranscript(ready: TranscriptReady, active: ActiveProcessing): void {
+    if (this.stopped || this.activeProcessing?.id !== active.id || active.transcriptRendered) {
+      return;
+    }
+    active.transcriptRendered = true;
+    this.latestTranscriptVideoId = ready.transcript.video.id;
+    this.appendComponent(new TranscriptView(ready.transcript));
+    this.status.setText(
+      ready.reused
+        ? "Loaded the existing Transcript. Generating its Summary…"
+        : "Transcript completed. Generating its Summary…",
+    );
+    this.tui.requestRender();
+  }
+
+  private renderVideoOutcome(outcome: VideoProcessingOutcome, transcriptRendered: boolean): void {
     switch (outcome.status) {
       case "completed": {
-        this.appendComponent(new TranscriptView(outcome.transcript));
+        this.latestTranscriptVideoId = outcome.transcript.video.id;
+        if (!transcriptRendered) {
+          this.appendComponent(new TranscriptView(outcome.transcript));
+        }
+        this.appendComponent(new SummaryView(outcome.summaryMarkdown));
         this.status.setText(
-          outcome.reused
-            ? "Loaded the existing Transcript from the Artifact Library."
-            : "Transcript completed.",
+          outcome.reusedTranscript && outcome.reusedSummary
+            ? "Loaded the existing Transcript and Summary from the Artifact Library."
+            : "Transcript and Summary completed.",
         );
+        return;
+      }
+      case "unsummarized": {
+        this.latestTranscriptVideoId = outcome.transcript.video.id;
+        if (!transcriptRendered) {
+          this.appendComponent(new TranscriptView(outcome.transcript));
+        }
+        this.appendMessage(
+          outcome.summaryStatus === "cancelled"
+            ? `Incomplete — ${outcome.message}`
+            : `Summary unavailable — ${outcome.message}`,
+        );
+        this.status.setText("Transcript completed. Press R to retry Summary generation.");
         return;
       }
       case "needs-input": {
@@ -220,15 +264,112 @@ export class SubtextApp extends Container {
     }
   }
 
-  private cancelActiveAcquisition(): void {
-    const active = this.activeAcquisition;
+  private regenerateLatestSummary(): void {
+    const videoId = this.latestTranscriptVideoId;
+    if (videoId === null) {
+      this.status.setText("Process a Source Video before regenerating a Summary.");
+      this.tui.requestRender();
+      return;
+    }
+
+    const active = this.beginProcessing("summary");
+    this.status.setText("Generating a new Summary… Esc cancels.");
+    this.tui.requestRender();
+    void this.processSummary(videoId, active);
+  }
+
+  private async processSummary(videoId: string, active: ActiveProcessing): Promise<void> {
+    let outcome: SummaryProcessingOutcome;
+    try {
+      outcome = await this.processing.summarize(videoId, {
+        regenerate: true,
+        signal: active.controller.signal,
+      });
+    } catch (error) {
+      if (active.controller.signal.aborted) {
+        outcome = { status: "cancelled", message: "Summary generation was cancelled." };
+      } else if (error instanceof Error) {
+        outcome = { status: "failed", message: "Summary generation failed.", cause: error };
+      } else {
+        outcome = {
+          status: "failed",
+          message: "Summary generation failed with an unrecognized error.",
+        };
+      }
+    }
+
+    if (!this.finishProcessing(active)) {
+      return;
+    }
+    this.renderSummaryOutcome(outcome);
+    this.restoreEditorFocus();
+    this.tui.requestRender();
+  }
+
+  private renderSummaryOutcome(outcome: SummaryProcessingOutcome): void {
+    switch (outcome.status) {
+      case "completed": {
+        this.appendComponent(new SummaryView(outcome.summaryMarkdown));
+        this.status.setText(outcome.reused ? "Loaded the existing Summary." : "Summary completed.");
+        return;
+      }
+      case "unavailable": {
+        this.appendMessage(`Summary unavailable — ${outcome.message}`);
+        this.status.setText("Ready for another URL.");
+        return;
+      }
+      case "failed": {
+        this.appendMessage(`Summary failed — ${outcome.message}`);
+        this.status.setText("The previous Summary, if any, remains available. Press R to retry.");
+        return;
+      }
+      case "cancelled": {
+        this.appendMessage(`Incomplete — ${outcome.message}`);
+        this.status.setText("The Transcript remains available. Press R to retry.");
+      }
+    }
+  }
+
+  private beginProcessing(kind: ActiveProcessing["kind"]): ActiveProcessing {
+    const active: ActiveProcessing = {
+      id: this.nextProcessingId,
+      kind,
+      controller: new AbortController(),
+      cancellationRequested: false,
+      transcriptRendered: false,
+    };
+    this.nextProcessingId += 1;
+    this.activeProcessing = active;
+    return active;
+  }
+
+  private finishProcessing(active: ActiveProcessing): boolean {
+    if (this.stopped || this.activeProcessing?.id !== active.id) {
+      return false;
+    }
+    this.activeProcessing = null;
+    return true;
+  }
+
+  private cancelActiveProcessing(): void {
+    const active = this.activeProcessing;
     if (active === null || active.cancellationRequested) {
       return;
     }
     active.cancellationRequested = true;
     active.controller.abort();
-    this.status.setText("Cancelling Transcript acquisition…");
+    this.status.setText(
+      active.kind === "summary"
+        ? "Cancelling Summary generation…"
+        : "Cancelling Source Video processing…",
+    );
     this.tui.requestRender();
+  }
+
+  private restoreEditorFocus(): void {
+    if (!this.tui.hasOverlay()) {
+      this.tui.setFocus(this.editor);
+    }
   }
 
   private openPalette(): void {
@@ -265,7 +406,7 @@ export class SubtextApp extends Container {
     handle = this.tui.showOverlay(new HelpOverlay(close), {
       width: "80%",
       minWidth: 38,
-      maxHeight: 12,
+      maxHeight: 13,
       margin: 1,
     });
     this.tui.requestRender();
@@ -275,7 +416,7 @@ export class SubtextApp extends Container {
     this.appendComponent(new Text(message, 0, 0));
   }
 
-  private appendComponent(component: Text | TranscriptView): void {
+  private appendComponent(component: Text | TranscriptView | SummaryView): void {
     if (this.history.children.length > 0) {
       this.history.addChild(new Spacer(1));
     }

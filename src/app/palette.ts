@@ -98,6 +98,7 @@ export class HelpOverlay extends Container {
           "Paste a YouTube URL and press Enter.",
           "",
           "/       Open the palette when the editor is empty",
+          "R       Regenerate the latest Summary when the editor is empty",
           "Esc     Cancel active processing",
           "Ctrl+C  Cancel active processing, or quit while idle",
           "",

@@ -7,13 +7,40 @@ import {
 } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AcquisitionOptions, AcquisitionOutcome } from "../acquisition/acquire-transcript.js";
+import type { AcquisitionOptions } from "../acquisition/acquire-transcript.js";
+import type {
+  SummaryProcessingOptions,
+  SummaryProcessingOutcome,
+  VideoProcessingOptions,
+  VideoProcessingOutcome,
+} from "../processing/process-video.js";
 import { TRANSCRIPT_SCHEMA_VERSION, type Transcript } from "../transcript/model.js";
-import { SubtextApp, type TranscriptAcquisition } from "./subtext-app.js";
+import { SubtextApp, type SourceVideoProcessing } from "./subtext-app.js";
+import { SummaryView } from "./summary-view.js";
 import { TranscriptView } from "./transcript-view.js";
 
 const VIDEO_ID = "dQw4w9WgXcQ";
 const SOURCE_URL = `https://www.youtube.com/watch?v=${VIDEO_ID}`;
+const SUMMARY_MARKDOWN = `# Summary
+
+## Overview
+The opening idea is introduced [00:01].
+
+## Chapters
+- [00:01] Opening
+
+## Claims
+- The opening idea matters [00:01].
+
+## Examples
+- A later example appears [01:05].
+
+## Caveats
+- None stated.
+
+## Takeaways
+- Retain the opening idea [00:01].
+`;
 const TRANSCRIPT: Transcript = {
   schemaVersion: TRANSCRIPT_SCHEMA_VERSION,
   video: {
@@ -41,50 +68,120 @@ const TRANSCRIPT: Transcript = {
 };
 
 describe("SubtextApp", () => {
-  it("submits a URL and prints a timestamp-linked Transcript", async () => {
-    const acquisition = new ImmediateAcquisition({
+  it("submits a URL and prints a timestamp-linked Transcript and Summary", async () => {
+    const processing = new ImmediateProcessing({
       status: "completed",
       transcript: TRANSCRIPT,
+      summaryMarkdown: SUMMARY_MARKDOWN,
       artifactDirectory: "/tmp/subtext-artifacts",
-      reused: false,
+      reusedTranscript: false,
+      reusedSummary: false,
     });
     const terminal = new FakeTerminal();
     const tui: TUI = new TuiMainScreen(terminal);
-    const app = new SubtextApp(tui, acquisition);
+    const app = new SubtextApp(tui, processing);
     app.start();
 
     typeText(terminal, SOURCE_URL);
     terminal.send("\r");
 
-    await vi.waitFor(() => expect(acquisition.calls).toBe(1));
-    await vi.waitFor(() => expect(renderedText(app)).toContain("Transcript completed."));
+    await vi.waitFor(() => expect(processing.calls).toBe(1));
+    await vi.waitFor(() =>
+      expect(renderedText(app)).toContain("Transcript and Summary completed."),
+    );
     const rendered = app.render(80).join("\n");
     expect(stripTerminalSequences(rendered)).toContain("[01:05] A later supporting example.");
     expect(rendered).toContain(`${SOURCE_URL}&t=65s`);
+    expect(stripTerminalSequences(rendered)).toContain("## Takeaways");
+    app.stop();
+  });
+
+  it("prints the Transcript before Summary generation finishes", async () => {
+    const processing = new DelayedSummaryProcessing();
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(tui, processing);
+    app.start();
+
+    typeText(terminal, SOURCE_URL);
+    terminal.send("\r");
+
+    await vi.waitFor(() => expect(renderedText(app)).toContain("The opening idea."));
+    expect(renderedText(app)).not.toContain("## Overview");
+
+    processing.completeSummary();
+
+    await vi.waitFor(() => expect(renderedText(app)).toContain("## Overview"));
     app.stop();
   });
 
   it("rejects another URL while active and leaves an incomplete marker after cancellation", async () => {
-    const acquisition = new AbortableAcquisition();
+    const processing = new AbortableProcessing();
     const terminal = new FakeTerminal();
     const tui: TUI = new TuiMainScreen(terminal);
-    const app = new SubtextApp(tui, acquisition);
+    const app = new SubtextApp(tui, processing);
     app.start();
 
     typeText(terminal, SOURCE_URL);
     terminal.send("\r");
-    await vi.waitFor(() => expect(acquisition.calls).toBe(1));
+    await vi.waitFor(() => expect(processing.calls).toBe(1));
 
     typeText(terminal, `https://youtu.be/${VIDEO_ID}`);
     terminal.send("\r");
     expect(renderedText(app)).toContain("Another Source Video cannot be submitted");
-    expect(acquisition.calls).toBe(1);
+    expect(processing.calls).toBe(1);
 
     terminal.send("\u001b");
     await vi.waitFor(() =>
       expect(renderedText(app)).toContain("Incomplete — Transcript acquisition was cancelled."),
     );
-    expect(acquisition.signal?.aborted).toBe(true);
+    expect(processing.signal?.aborted).toBe(true);
+    app.stop();
+  });
+
+  it("marks a cancelled Summary incomplete while retaining the Transcript", async () => {
+    const processing = new ImmediateProcessing({
+      status: "unsummarized",
+      transcript: TRANSCRIPT,
+      artifactDirectory: "/tmp/subtext-artifacts",
+      reusedTranscript: false,
+      summaryStatus: "cancelled",
+      message: "Summary generation was cancelled.",
+    });
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(tui, processing);
+    app.start();
+
+    typeText(terminal, SOURCE_URL);
+    terminal.send("\r");
+
+    await vi.waitFor(() =>
+      expect(renderedText(app)).toContain("Incomplete — Summary generation was cancelled."),
+    );
+    expect(renderedText(app)).toContain("The opening idea.");
+    app.stop();
+  });
+
+  it("retries an unavailable Summary without reacquiring the Transcript", async () => {
+    const processing = new RetrySummaryProcessing();
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(tui, processing);
+    app.start();
+
+    typeText(terminal, SOURCE_URL);
+    terminal.send("\r");
+    await vi.waitFor(() =>
+      expect(renderedText(app)).toContain("Press R to retry Summary generation."),
+    );
+
+    terminal.send("R");
+
+    await vi.waitFor(() => expect(processing.summaryCalls).toBe(1));
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Summary completed."));
+    expect(renderedText(app)).toContain("## Overview");
+    expect(processing.processCalls).toBe(1);
     app.stop();
   });
 
@@ -93,7 +190,7 @@ describe("SubtextApp", () => {
     const tui: TUI = new TuiMainScreen(terminal);
     const app = new SubtextApp(
       tui,
-      new ImmediateAcquisition({
+      new ImmediateProcessing({
         status: "needs-input",
         reason: "invalid-source-url",
         message: "Enter a URL.",
@@ -118,25 +215,70 @@ describe("TranscriptView", () => {
   });
 });
 
-class ImmediateAcquisition implements TranscriptAcquisition {
-  readonly outcome: AcquisitionOutcome;
+describe("SummaryView", () => {
+  it.each([5, 20, 80])("keeps every rendered line within a %d-column terminal", (width) => {
+    const lines = new SummaryView(SUMMARY_MARKDOWN).render(width);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+  });
+});
+
+class ImmediateProcessing implements SourceVideoProcessing {
+  readonly outcome: VideoProcessingOutcome;
   calls = 0;
 
-  constructor(outcome: AcquisitionOutcome) {
+  constructor(outcome: VideoProcessingOutcome) {
     this.outcome = outcome;
   }
 
-  async acquire(): Promise<AcquisitionOutcome> {
+  async process(): Promise<VideoProcessingOutcome> {
     this.calls += 1;
     return this.outcome;
   }
+
+  async summarize(): Promise<SummaryProcessingOutcome> {
+    return { status: "unavailable", message: "No Transcript." };
+  }
 }
 
-class AbortableAcquisition implements TranscriptAcquisition {
+class DelayedSummaryProcessing implements SourceVideoProcessing {
+  private finish: ((outcome: VideoProcessingOutcome) => void) | null = null;
+
+  process(
+    _sourceUrl: string,
+    options: VideoProcessingOptions = {},
+  ): Promise<VideoProcessingOutcome> {
+    options.onTranscript?.({
+      transcript: TRANSCRIPT,
+      artifactDirectory: "/tmp/subtext-artifacts",
+      reused: false,
+    });
+    return new Promise((resolve) => {
+      this.finish = resolve;
+    });
+  }
+
+  async summarize(): Promise<SummaryProcessingOutcome> {
+    return { status: "unavailable", message: "No Transcript." };
+  }
+
+  completeSummary(): void {
+    this.finish?.({
+      status: "completed",
+      transcript: TRANSCRIPT,
+      summaryMarkdown: SUMMARY_MARKDOWN,
+      artifactDirectory: "/tmp/subtext-artifacts",
+      reusedTranscript: false,
+      reusedSummary: false,
+    });
+  }
+}
+
+class AbortableProcessing implements SourceVideoProcessing {
   calls = 0;
   signal: AbortSignal | undefined;
 
-  acquire(_sourceUrl: string, options: AcquisitionOptions = {}): Promise<AcquisitionOutcome> {
+  process(_sourceUrl: string, options: AcquisitionOptions = {}): Promise<VideoProcessingOutcome> {
     this.calls += 1;
     this.signal = options.signal;
     return new Promise((resolve) => {
@@ -146,6 +288,40 @@ class AbortableAcquisition implements TranscriptAcquisition {
         { once: true },
       );
     });
+  }
+
+  async summarize(
+    _videoId: string,
+    _options: SummaryProcessingOptions = {},
+  ): Promise<SummaryProcessingOutcome> {
+    return { status: "unavailable", message: "No Transcript." };
+  }
+}
+
+class RetrySummaryProcessing implements SourceVideoProcessing {
+  processCalls = 0;
+  summaryCalls = 0;
+
+  async process(): Promise<VideoProcessingOutcome> {
+    this.processCalls += 1;
+    return {
+      status: "unsummarized",
+      transcript: TRANSCRIPT,
+      artifactDirectory: "/tmp/subtext-artifacts",
+      reusedTranscript: false,
+      summaryStatus: "failed",
+      message: "Provider unavailable.",
+    };
+  }
+
+  async summarize(): Promise<SummaryProcessingOutcome> {
+    this.summaryCalls += 1;
+    return {
+      status: "completed",
+      summaryMarkdown: SUMMARY_MARKDOWN,
+      artifactDirectory: "/tmp/subtext-artifacts",
+      reused: false,
+    };
   }
 }
 

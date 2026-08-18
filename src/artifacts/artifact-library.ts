@@ -11,6 +11,7 @@ import {
 
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const TRANSCRIPT_FILENAME = "transcript.json";
+const SUMMARY_FILENAME = "summary.md";
 
 interface CurrentRevision {
   readonly revision: string;
@@ -19,6 +20,13 @@ interface CurrentRevision {
 export interface StoredTranscript {
   readonly transcript: Transcript;
   readonly artifactDirectory: string;
+  readonly revision: string;
+}
+
+export interface StoredSummary {
+  readonly markdown: string;
+  readonly artifactDirectory: string;
+  readonly revision: string;
 }
 
 export class ArtifactLibraryError extends Error {
@@ -57,9 +65,32 @@ export class ArtifactLibrary {
       const transcriptText = await readFile(join(artifactDirectory, TRANSCRIPT_FILENAME), "utf8");
       const transcript: Transcript = JSON.parse(transcriptText);
       validateTranscript(transcript, videoId);
-      return { transcript, artifactDirectory };
+      return { transcript, artifactDirectory, revision: pointer.revision };
     } catch (error) {
       throw new ArtifactLibraryError(`Video Artifacts for ${videoId} are invalid or incomplete.`, {
+        cause: error,
+      });
+    }
+  }
+
+  async findSummary(videoId: string): Promise<StoredSummary | null> {
+    validateVideoId(videoId);
+    const videoDirectory = this.videoDirectory(videoId);
+    const revision = await readCurrentRevision(videoDirectory);
+    if (revision === null) {
+      return null;
+    }
+
+    const artifactDirectory = join(videoDirectory, "revisions", revision);
+    try {
+      const markdown = await readFile(join(artifactDirectory, SUMMARY_FILENAME), "utf8");
+      validateSummary(markdown);
+      return { markdown, artifactDirectory, revision };
+    } catch (error) {
+      if (error instanceof Error && isNodeError(error) && error.code === "ENOENT") {
+        return null;
+      }
+      throw new ArtifactLibraryError(`Could not read the Summary for ${videoId}.`, {
         cause: error,
       });
     }
@@ -116,7 +147,47 @@ export class ArtifactLibrary {
         () => undefined,
       );
     }
-    return { transcript, artifactDirectory };
+    return { transcript, artifactDirectory, revision };
+  }
+
+  async commitSummary(
+    videoId: string,
+    expectedRevision: string,
+    markdown: string,
+    signal?: AbortSignal,
+  ): Promise<StoredSummary> {
+    validateVideoId(videoId);
+    validateRevision(expectedRevision);
+    validateSummary(markdown);
+    requireActiveSummaryCommit(signal);
+
+    const videoDirectory = this.videoDirectory(videoId);
+    const currentRevision = await readCurrentRevision(videoDirectory);
+    requireActiveSummaryCommit(signal);
+    if (currentRevision !== expectedRevision) {
+      throw new ArtifactLibraryError(
+        `The Transcript for ${videoId} changed before its Summary could be committed.`,
+      );
+    }
+
+    const artifactDirectory = join(videoDirectory, "revisions", expectedRevision);
+    const temporarySummary = join(artifactDirectory, `.summary-${randomUUID()}.md`);
+    const summary = join(artifactDirectory, SUMMARY_FILENAME);
+    try {
+      await writeFile(temporarySummary, `${markdown.trimEnd()}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+      requireActiveSummaryCommit(signal);
+      await rename(temporarySummary, summary);
+    } catch (error) {
+      await rm(temporarySummary, { force: true }).catch(() => undefined);
+      throw new ArtifactLibraryError(`Could not commit the Summary for ${videoId}.`, {
+        cause: error,
+      });
+    }
+
+    return { markdown: `${markdown.trimEnd()}\n`, artifactDirectory, revision: expectedRevision };
   }
 
   private videoDirectory(videoId: string): string {
@@ -179,6 +250,18 @@ function validateTranscript(transcript: Transcript, expectedVideoId: string): vo
     transcript.segments.length === 0
   ) {
     throw new ArtifactLibraryError("The canonical Transcript is invalid.");
+  }
+}
+
+function requireActiveSummaryCommit(signal?: AbortSignal): void {
+  if (signal?.aborted === true) {
+    throw new ArtifactLibraryError("Summary commit was cancelled.");
+  }
+}
+
+function validateSummary(markdown: string): void {
+  if (markdown.trim() === "") {
+    throw new ArtifactLibraryError("An empty Summary cannot be committed.");
   }
 }
 

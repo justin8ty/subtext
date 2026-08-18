@@ -26,6 +26,7 @@ export type AcquisitionOutcome =
       readonly status: "completed";
       readonly transcript: Transcript;
       readonly artifactDirectory: string;
+      readonly artifactRevision: string;
       readonly reused: boolean;
     }
   | {
@@ -78,6 +79,7 @@ export class TranscriptAcquirer {
             status: "completed",
             transcript: existing.transcript,
             artifactDirectory: existing.artifactDirectory,
+            artifactRevision: existing.revision,
             reused: true,
           };
         }
@@ -133,6 +135,7 @@ export class TranscriptAcquirer {
         status: "completed",
         transcript: stored.transcript,
         artifactDirectory: stored.artifactDirectory,
+        artifactRevision: stored.revision,
         reused: false,
       };
     } catch (error) {
