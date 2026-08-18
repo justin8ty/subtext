@@ -1,0 +1,187 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+import {
+  CAPTION_TRACK_ARTIFACT_FILENAME,
+  TRANSCRIPT_SCHEMA_VERSION,
+  type Transcript,
+} from "../transcript/model.js";
+
+const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
+const TRANSCRIPT_FILENAME = "transcript.json";
+
+interface CurrentRevision {
+  readonly revision: string;
+}
+
+export interface StoredTranscript {
+  readonly transcript: Transcript;
+  readonly artifactDirectory: string;
+}
+
+export class ArtifactLibraryError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "ArtifactLibraryError";
+  }
+}
+
+export class ArtifactLibrary {
+  readonly rootDirectory: string;
+
+  constructor(rootDirectory = join(homedir(), ".subtext")) {
+    this.rootDirectory = rootDirectory;
+  }
+
+  async findTranscript(videoId: string): Promise<StoredTranscript | null> {
+    validateVideoId(videoId);
+    const videoDirectory = this.videoDirectory(videoId);
+    let pointerText: string;
+    try {
+      pointerText = await readFile(join(videoDirectory, "current.json"), "utf8");
+    } catch (error) {
+      if (error instanceof Error && isNodeError(error) && error.code === "ENOENT") {
+        return null;
+      }
+      throw new ArtifactLibraryError(`Could not read Video Artifacts for ${videoId}.`, {
+        cause: error,
+      });
+    }
+
+    try {
+      const pointer: CurrentRevision = JSON.parse(pointerText);
+      validateRevision(pointer.revision);
+      const artifactDirectory = join(videoDirectory, "revisions", pointer.revision);
+      const transcriptText = await readFile(join(artifactDirectory, TRANSCRIPT_FILENAME), "utf8");
+      const transcript: Transcript = JSON.parse(transcriptText);
+      validateTranscript(transcript, videoId);
+      return { transcript, artifactDirectory };
+    } catch (error) {
+      throw new ArtifactLibraryError(`Video Artifacts for ${videoId} are invalid or incomplete.`, {
+        cause: error,
+      });
+    }
+  }
+
+  async commitCaptionTranscript(
+    transcript: Transcript,
+    rawCaption: string,
+  ): Promise<StoredTranscript> {
+    validateTranscript(transcript, transcript.video.id);
+    if (transcript.provenance.origin === "asr") {
+      throw new ArtifactLibraryError("A caption commit requires Caption Track provenance.");
+    }
+    if (transcript.provenance.rawArtifact !== CAPTION_TRACK_ARTIFACT_FILENAME) {
+      throw new ArtifactLibraryError(
+        "Caption Track provenance does not name the canonical raw artifact.",
+      );
+    }
+    if (rawCaption.trim() === "") {
+      throw new ArtifactLibraryError("An empty Caption Track cannot be committed.");
+    }
+
+    const videoDirectory = this.videoDirectory(transcript.video.id);
+    const revisionsDirectory = join(videoDirectory, "revisions");
+    const previousRevision = await readCurrentRevision(videoDirectory);
+    const revision = `${Date.now()}-${randomUUID()}`;
+    const artifactDirectory = join(revisionsDirectory, revision);
+    await mkdir(artifactDirectory, { recursive: true, mode: 0o700 });
+
+    try {
+      await writeFile(join(artifactDirectory, CAPTION_TRACK_ARTIFACT_FILENAME), rawCaption, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+      await writeFile(
+        join(artifactDirectory, TRANSCRIPT_FILENAME),
+        `${JSON.stringify(transcript, null, 2)}\n`,
+        {
+          encoding: "utf8",
+          mode: 0o600,
+        },
+      );
+      await switchCurrentRevision(videoDirectory, revision);
+    } catch (error) {
+      await rm(artifactDirectory, { recursive: true, force: true }).catch(() => undefined);
+      throw new ArtifactLibraryError(
+        `Could not commit Video Artifacts for ${transcript.video.id}.`,
+        { cause: error },
+      );
+    }
+
+    if (previousRevision !== null && previousRevision !== revision) {
+      await rm(join(revisionsDirectory, previousRevision), { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    }
+    return { transcript, artifactDirectory };
+  }
+
+  private videoDirectory(videoId: string): string {
+    return join(this.rootDirectory, "videos", videoId);
+  }
+}
+
+async function switchCurrentRevision(videoDirectory: string, revision: string): Promise<void> {
+  await mkdir(videoDirectory, { recursive: true, mode: 0o700 });
+  const temporaryPointer = join(videoDirectory, `.current-${randomUUID()}.json`);
+  const currentPointer = join(videoDirectory, "current.json");
+  await writeFile(temporaryPointer, `${JSON.stringify({ revision }, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  await rename(temporaryPointer, currentPointer);
+}
+
+async function readCurrentRevision(videoDirectory: string): Promise<string | null> {
+  let pointerText: string;
+  try {
+    pointerText = await readFile(join(videoDirectory, "current.json"), "utf8");
+  } catch (error) {
+    if (error instanceof Error && isNodeError(error) && error.code === "ENOENT") {
+      return null;
+    }
+    throw new ArtifactLibraryError("Could not inspect the current Video Artifact revision.", {
+      cause: error,
+    });
+  }
+
+  try {
+    const pointer: CurrentRevision = JSON.parse(pointerText);
+    validateRevision(pointer.revision);
+    return pointer.revision;
+  } catch (error) {
+    throw new ArtifactLibraryError("The current Video Artifact revision is invalid.", {
+      cause: error,
+    });
+  }
+}
+
+function validateVideoId(videoId: string): void {
+  if (!VIDEO_ID_PATTERN.test(videoId)) {
+    throw new ArtifactLibraryError(`Invalid YouTube video ID: ${videoId}`);
+  }
+}
+
+function validateRevision(revision: string): void {
+  if (!/^\d+-[0-9a-f-]{36}$/u.test(revision)) {
+    throw new ArtifactLibraryError("The current Video Artifact revision is invalid.");
+  }
+}
+
+function validateTranscript(transcript: Transcript, expectedVideoId: string): void {
+  if (
+    transcript.schemaVersion !== TRANSCRIPT_SCHEMA_VERSION ||
+    transcript.video.id !== expectedVideoId ||
+    !Array.isArray(transcript.segments) ||
+    transcript.segments.length === 0
+  ) {
+    throw new ArtifactLibraryError("The canonical Transcript is invalid.");
+  }
+}
+
+function isNodeError(error: Error): error is NodeJS.ErrnoException {
+  return "code" in error;
+}
