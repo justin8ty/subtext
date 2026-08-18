@@ -1,3 +1,4 @@
+export { SubtextApp, type TranscriptAcquisition } from "./app/subtext-app.js";
 export { ArtifactLibrary, ArtifactLibraryError } from "./artifacts/artifact-library.js";
 export {
   TranscriptAcquirer,

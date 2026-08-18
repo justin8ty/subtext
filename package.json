@@ -2,6 +2,9 @@
   "name": "subtext",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "subtext": "./dist/main.js"
+  },
   "type": "module",
   "scripts": {
     "dev": "tsx src/main.ts",
