@@ -13,4 +13,4 @@ After making changes, run:
 pnpm format && pnpm lint && pnpm typecheck
 ```
 
-Run `pnpm test` as well when tests are present or when changing tested behavior.
+Run `pnpm test` only when tests are present or when changing tested behavior.
