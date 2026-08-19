@@ -1,0 +1,702 @@
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+
+import extractZip from "extract-zip";
+
+import {
+  WINDOWS_X64_RUNTIME_MANIFEST,
+  type AsrQuality,
+  type RuntimeDownload,
+  type RuntimeManifest,
+  type RuntimeModelManifest,
+  type RuntimeToolManifest,
+} from "./runtime-manifest.js";
+
+const RECEIPT_FILENAME = ".subtext-runtime.json";
+const RECEIPT_SCHEMA_VERSION = 1;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+
+type RuntimePackageId = "yt-dlp" | "ffmpeg" | "whisper.cpp" | `model-${AsrQuality}`;
+
+export type RuntimePreparationMode = "ensure" | "update" | "repair";
+
+export type RuntimeProgress =
+  | { readonly phase: "checking"; readonly packageId: RuntimePackageId }
+  | {
+      readonly phase: "downloading";
+      readonly packageId: RuntimePackageId;
+      readonly downloadedBytes: number;
+      readonly totalBytes: number;
+    }
+  | { readonly phase: "installing"; readonly packageId: RuntimePackageId }
+  | { readonly phase: "ready"; readonly packageId: RuntimePackageId };
+
+export interface RuntimePreparationOptions {
+  readonly quality?: AsrQuality;
+  readonly mode?: RuntimePreparationMode;
+  readonly signal?: AbortSignal;
+  readonly onProgress?: (progress: RuntimeProgress) => void;
+}
+
+export interface RuntimePaths {
+  readonly rootDirectory: string;
+  readonly ytDlpExecutable: string;
+  readonly ffmpegExecutable: string;
+  readonly ffmpegDirectory: string;
+  readonly whisperExecutable: string;
+  readonly modelPath: string;
+  readonly modelName: string;
+  readonly versions: {
+    readonly ytDlp: string;
+    readonly ffmpeg: string;
+    readonly whisperCpp: string;
+    readonly model: string;
+  };
+}
+
+export type RuntimeManagerErrorKind =
+  | "unsupported-platform"
+  | "cancelled"
+  | "download"
+  | "verification"
+  | "install";
+
+export class RuntimeManagerError extends Error {
+  readonly kind: RuntimeManagerErrorKind;
+
+  constructor(kind: RuntimeManagerErrorKind, message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "RuntimeManagerError";
+    this.kind = kind;
+  }
+}
+
+export interface RuntimeHttpClient {
+  get(url: string, signal?: AbortSignal): Promise<Response>;
+}
+
+export interface RuntimeManagerOptions {
+  readonly rootDirectory?: string;
+  readonly manifest?: RuntimeManifest;
+  readonly httpClient?: RuntimeHttpClient;
+}
+
+interface RuntimePackageSpec {
+  readonly id: RuntimePackageId;
+  readonly category: "tools" | "models";
+  readonly directoryName: string;
+  readonly version: string;
+  readonly archive: "file" | "zip";
+  readonly download: RuntimeDownload;
+  readonly directFileName?: string;
+  readonly primaryFile: string;
+  readonly requiredFiles: readonly string[];
+}
+
+interface RuntimeReceiptFile {
+  readonly path: string;
+  readonly size: number;
+  readonly sha256: string;
+}
+
+interface RuntimeReceipt {
+  readonly schemaVersion: typeof RECEIPT_SCHEMA_VERSION;
+  readonly identity: string;
+  readonly primaryPath: string;
+  readonly requiredPaths: Readonly<Record<string, string>>;
+  readonly files: readonly RuntimeReceiptFile[];
+}
+
+interface InstalledPackage {
+  readonly directory: string;
+  readonly primaryPath: string;
+}
+
+export class RuntimeManager {
+  readonly rootDirectory: string;
+  readonly manifest: RuntimeManifest;
+  private readonly httpClient: RuntimeHttpClient;
+
+  constructor(options: RuntimeManagerOptions = {}) {
+    this.rootDirectory = options.rootDirectory ?? join(homedir(), ".subtext", "runtime");
+    this.manifest = options.manifest ?? WINDOWS_X64_RUNTIME_MANIFEST;
+    this.httpClient = options.httpClient ?? new FetchRuntimeHttpClient();
+  }
+
+  async prepare(options: RuntimePreparationOptions = {}): Promise<RuntimePaths> {
+    this.validateTarget();
+    validateManifest(this.manifest);
+    throwIfAborted(options.signal);
+
+    const quality = options.quality ?? "balanced";
+    const mode = options.mode ?? "ensure";
+    const specs = packageSpecs(this.manifest, quality);
+    await mkdir(this.rootDirectory, { recursive: true, mode: 0o700 });
+
+    const installed = new Map<RuntimePackageId, InstalledPackage>();
+    for (const spec of specs) {
+      emitProgress(options.onProgress, { phase: "checking", packageId: spec.id });
+      const existing = await verifyInstalledPackage(
+        this.packageDirectory(spec),
+        spec,
+        mode === "repair",
+      );
+      const runtimePackage =
+        existing ?? (await this.installPackage(spec, options.signal, options.onProgress));
+      installed.set(spec.id, runtimePackage);
+      emitProgress(options.onProgress, { phase: "ready", packageId: spec.id });
+    }
+
+    if (mode === "update") {
+      await this.removeObsoleteVersions(specs);
+    }
+
+    const ytDlp = requireInstalled(installed, "yt-dlp");
+    const ffmpeg = requireInstalled(installed, "ffmpeg");
+    const whisper = requireInstalled(installed, "whisper.cpp");
+    const model = requireInstalled(installed, `model-${quality}`);
+    return {
+      rootDirectory: this.rootDirectory,
+      ytDlpExecutable: ytDlp.primaryPath,
+      ffmpegExecutable: ffmpeg.primaryPath,
+      ffmpegDirectory: dirname(ffmpeg.primaryPath),
+      whisperExecutable: whisper.primaryPath,
+      modelPath: model.primaryPath,
+      modelName: this.manifest.models[quality].modelName,
+      versions: {
+        ytDlp: this.manifest.tools.ytDlp.version,
+        ffmpeg: this.manifest.tools.ffmpeg.version,
+        whisperCpp: this.manifest.tools.whisperCpp.version,
+        model: this.manifest.models[quality].version,
+      },
+    };
+  }
+
+  private validateTarget(): void {
+    if (
+      process.platform !== this.manifest.platform ||
+      process.arch !== this.manifest.architecture
+    ) {
+      throw new RuntimeManagerError(
+        "unsupported-platform",
+        `Subtext runtime ${this.manifest.platform}/${this.manifest.architecture} cannot run on ${process.platform}/${process.arch}.`,
+      );
+    }
+  }
+
+  private async installPackage(
+    spec: RuntimePackageSpec,
+    signal?: AbortSignal,
+    onProgress?: (progress: RuntimeProgress) => void,
+  ): Promise<InstalledPackage> {
+    throwIfAborted(signal);
+    const stagingDirectory = join(this.rootDirectory, `.staging-${spec.id}-${randomUUID()}`);
+    const downloadPath = join(stagingDirectory, "download");
+    const contentDirectory = join(stagingDirectory, "content");
+    const destination = this.packageDirectory(spec);
+    const backup = `${destination}.replaced-${randomUUID()}`;
+    let movedExisting = false;
+
+    await mkdir(contentDirectory, { recursive: true, mode: 0o700 });
+    try {
+      await downloadVerified(spec, downloadPath, this.httpClient, signal, onProgress);
+      throwIfAborted(signal);
+      emitProgress(onProgress, { phase: "installing", packageId: spec.id });
+      if (spec.archive === "zip") {
+        await extractZip(downloadPath, { dir: resolve(contentDirectory) });
+      } else {
+        const directFileName = spec.directFileName;
+        if (directFileName === undefined) {
+          throw new RuntimeManagerError("install", `Runtime package ${spec.id} has no file name.`);
+        }
+        await rename(downloadPath, join(contentDirectory, directFileName));
+      }
+      throwIfAborted(signal);
+
+      const receipt = await createReceipt(contentDirectory, spec);
+      await writeFile(
+        join(contentDirectory, RECEIPT_FILENAME),
+        `${JSON.stringify(receipt, null, 2)}\n`,
+        { encoding: "utf8", mode: 0o600 },
+      );
+      await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
+      const concurrentlyInstalled = await verifyInstalledPackage(destination, spec, true);
+      if (concurrentlyInstalled !== null) {
+        return concurrentlyInstalled;
+      }
+      try {
+        await rename(destination, backup);
+        movedExisting = true;
+      } catch (error) {
+        if (!isMissingPathError(error)) {
+          throw error;
+        }
+      }
+      await rename(contentDirectory, destination);
+      if (movedExisting) {
+        await rm(backup, { recursive: true, force: true });
+      }
+
+      const installed = await verifyInstalledPackage(destination, spec, false);
+      if (installed === null) {
+        throw new RuntimeManagerError(
+          "install",
+          `Runtime package ${spec.id} was incomplete after installation.`,
+        );
+      }
+      return installed;
+    } catch (error) {
+      if (movedExisting) {
+        await rm(destination, { recursive: true, force: true }).catch(() => undefined);
+        await rename(backup, destination).catch(() => undefined);
+      }
+      if (error instanceof RuntimeManagerError) {
+        throw error;
+      }
+      throw new RuntimeManagerError("install", `Could not install runtime package ${spec.id}.`, {
+        cause: error,
+      });
+    } finally {
+      await rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
+  private packageDirectory(spec: RuntimePackageSpec): string {
+    return join(this.rootDirectory, spec.category, spec.directoryName, spec.version);
+  }
+
+  private async removeObsoleteVersions(specs: readonly RuntimePackageSpec[]): Promise<void> {
+    for (const spec of specs) {
+      const packageRoot = join(this.rootDirectory, spec.category, spec.directoryName);
+      let entries;
+      try {
+        entries = await readdir(packageRoot, { withFileTypes: true });
+      } catch (error) {
+        if (isMissingPathError(error)) {
+          continue;
+        }
+        throw new RuntimeManagerError(
+          "install",
+          `Could not inspect old versions of runtime package ${spec.id}.`,
+          { cause: error },
+        );
+      }
+      await Promise.all(
+        entries
+          .filter((entry) => entry.isDirectory() && entry.name !== spec.version)
+          .map((entry) => rm(join(packageRoot, entry.name), { recursive: true, force: true })),
+      );
+    }
+  }
+}
+
+function packageSpecs(
+  manifest: RuntimeManifest,
+  quality: AsrQuality,
+): readonly RuntimePackageSpec[] {
+  return [
+    toolSpec("yt-dlp", "yt-dlp", manifest.tools.ytDlp),
+    toolSpec("ffmpeg", "ffmpeg", manifest.tools.ffmpeg),
+    toolSpec("whisper.cpp", "whisper.cpp", manifest.tools.whisperCpp),
+    modelSpec(quality, manifest.models[quality]),
+  ];
+}
+
+function toolSpec(
+  id: Exclude<RuntimePackageId, `model-${AsrQuality}`>,
+  directoryName: string,
+  tool: RuntimeToolManifest,
+): RuntimePackageSpec {
+  const base = {
+    id,
+    category: "tools" as const,
+    directoryName,
+    version: tool.version,
+    archive: tool.archive,
+    download: tool.download,
+    primaryFile: tool.executableName,
+    requiredFiles: tool.requiredFiles,
+  };
+  return tool.archive === "file" ? { ...base, directFileName: tool.executableName } : base;
+}
+
+function modelSpec(quality: AsrQuality, model: RuntimeModelManifest): RuntimePackageSpec {
+  return {
+    id: `model-${quality}`,
+    category: "models",
+    directoryName: quality,
+    version: model.version,
+    archive: "file",
+    download: model.download,
+    directFileName: model.fileName,
+    primaryFile: model.fileName,
+    requiredFiles: [model.fileName],
+  };
+}
+
+class FetchRuntimeHttpClient implements RuntimeHttpClient {
+  get(url: string, signal?: AbortSignal): Promise<Response> {
+    const init: RequestInit = {
+      headers: { "User-Agent": "Subtext runtime manager" },
+      redirect: "follow",
+    };
+    if (signal !== undefined) {
+      init.signal = signal;
+    }
+    return fetch(url, init);
+  }
+}
+
+async function downloadVerified(
+  spec: RuntimePackageSpec,
+  destination: string,
+  httpClient: RuntimeHttpClient,
+  signal?: AbortSignal,
+  onProgress?: (progress: RuntimeProgress) => void,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await httpClient.get(spec.download.url, signal);
+  } catch (error) {
+    if (signal?.aborted === true) {
+      throw new RuntimeManagerError("cancelled", "Runtime preparation was cancelled.", {
+        cause: error,
+      });
+    }
+    throw new RuntimeManagerError("download", `Could not download runtime package ${spec.id}.`, {
+      cause: error,
+    });
+  }
+
+  if (!response.ok || response.body === null) {
+    throw new RuntimeManagerError(
+      "download",
+      `Runtime package ${spec.id} download failed with HTTP ${response.status}.`,
+    );
+  }
+
+  const file = await open(destination, "wx", 0o600);
+  const hash = createHash("sha256");
+  let downloadedBytes = 0;
+  let lastProgressAt = 0;
+  try {
+    const reader = response.body.getReader();
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        break;
+      }
+      throwIfAborted(signal);
+      downloadedBytes += chunk.value.byteLength;
+      if (downloadedBytes > spec.download.size) {
+        throw new RuntimeManagerError(
+          "verification",
+          `Runtime package ${spec.id} exceeded its pinned size.`,
+        );
+      }
+      hash.update(chunk.value);
+      await file.write(chunk.value);
+      const now = Date.now();
+      if (now - lastProgressAt >= 250 || downloadedBytes === spec.download.size) {
+        lastProgressAt = now;
+        emitProgress(onProgress, {
+          phase: "downloading",
+          packageId: spec.id,
+          downloadedBytes,
+          totalBytes: spec.download.size,
+        });
+      }
+    }
+  } catch (error) {
+    if (signal?.aborted === true && !(error instanceof RuntimeManagerError)) {
+      throw new RuntimeManagerError("cancelled", "Runtime preparation was cancelled.", {
+        cause: error,
+      });
+    }
+    throw error;
+  } finally {
+    await file.close();
+  }
+
+  const digest = hash.digest("hex");
+  if (downloadedBytes !== spec.download.size || digest !== spec.download.sha256) {
+    throw new RuntimeManagerError(
+      "verification",
+      `Runtime package ${spec.id} did not match its pinned size and SHA-256 digest.`,
+    );
+  }
+}
+
+async function createReceipt(
+  contentDirectory: string,
+  spec: RuntimePackageSpec,
+): Promise<RuntimeReceipt> {
+  const files = await inventoryFiles(contentDirectory, true);
+  const requiredPaths: Record<string, string> = {};
+  for (const requiredFile of spec.requiredFiles) {
+    const matches = files.filter(
+      (file) => basename(file.path).toLowerCase() === requiredFile.toLowerCase(),
+    );
+    if (matches.length !== 1) {
+      throw new RuntimeManagerError(
+        "install",
+        `Runtime package ${spec.id} must contain exactly one ${requiredFile}.`,
+      );
+    }
+    requiredPaths[requiredFile] = matches[0]!.path;
+  }
+
+  const primaryPath = requiredPaths[spec.primaryFile];
+  if (primaryPath === undefined) {
+    throw new RuntimeManagerError(
+      "install",
+      `Runtime package ${spec.id} did not contain ${spec.primaryFile}.`,
+    );
+  }
+  return {
+    schemaVersion: RECEIPT_SCHEMA_VERSION,
+    identity: packageIdentity(spec),
+    primaryPath,
+    requiredPaths,
+    files,
+  };
+}
+
+async function verifyInstalledPackage(
+  directory: string,
+  spec: RuntimePackageSpec,
+  verifyDigests: boolean,
+): Promise<InstalledPackage | null> {
+  try {
+    // SAFETY: the receipt is validated against its schema and pinned package identity below.
+    const receipt = JSON.parse(
+      await readFile(join(directory, RECEIPT_FILENAME), "utf8"),
+    ) as RuntimeReceipt;
+    if (!isValidReceipt(receipt, spec)) {
+      return null;
+    }
+
+    for (const file of receipt.files) {
+      const path = safeReceiptPath(directory, file.path);
+      const metadata = await stat(path);
+      if (!metadata.isFile() || metadata.size !== file.size) {
+        return null;
+      }
+      if (verifyDigests && (await sha256File(path)) !== file.sha256) {
+        return null;
+      }
+    }
+    for (const requiredFile of spec.requiredFiles) {
+      const requiredPath = receipt.requiredPaths[requiredFile];
+      if (requiredPath === undefined) {
+        return null;
+      }
+      await stat(safeReceiptPath(directory, requiredPath));
+    }
+    return {
+      directory,
+      primaryPath: safeReceiptPath(directory, receipt.primaryPath),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function inventoryFiles(
+  rootDirectory: string,
+  includeDigests: boolean,
+): Promise<RuntimeReceiptFile[]> {
+  const files: RuntimeReceiptFile[] = [];
+  async function visit(directory: string): Promise<void> {
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+      } else if (entry.isFile()) {
+        const metadata = await stat(path);
+        files.push({
+          path: portableRelativePath(rootDirectory, path),
+          size: metadata.size,
+          sha256: includeDigests ? await sha256File(path) : "",
+        });
+      } else {
+        throw new RuntimeManagerError(
+          "install",
+          "Runtime archives may contain only regular files and directories.",
+        );
+      }
+    }
+  }
+  await visit(rootDirectory);
+  files.sort((left, right) => left.path.localeCompare(right.path));
+  return files;
+}
+
+async function sha256File(path: string): Promise<string> {
+  const file = await open(path, "r");
+  const hash = createHash("sha256");
+  try {
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    while (true) {
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) {
+        break;
+      }
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+    return hash.digest("hex");
+  } finally {
+    await file.close();
+  }
+}
+
+function isValidReceipt(receipt: RuntimeReceipt, spec: RuntimePackageSpec): boolean {
+  return (
+    receipt.schemaVersion === RECEIPT_SCHEMA_VERSION &&
+    receipt.identity === packageIdentity(spec) &&
+    receipt.primaryPath === receipt.requiredPaths[spec.primaryFile] &&
+    Array.isArray(receipt.files) &&
+    receipt.files.length > 0 &&
+    receipt.files.every(
+      (file) =>
+        file.path.length > 0 &&
+        Number.isSafeInteger(file.size) &&
+        file.size >= 0 &&
+        SHA256_PATTERN.test(file.sha256),
+    ) &&
+    spec.requiredFiles.every((requiredFile) => {
+      const requiredPath = receipt.requiredPaths[requiredFile];
+      return (
+        requiredPath !== undefined &&
+        basename(requiredPath).toLowerCase() === requiredFile.toLowerCase() &&
+        receipt.files.some((file) => file.path === requiredPath)
+      );
+    })
+  );
+}
+
+function safeReceiptPath(rootDirectory: string, portablePath: string): string {
+  if (
+    portablePath === "" ||
+    isAbsolute(portablePath) ||
+    portablePath.split("/").some((part) => part === "" || part === "." || part === "..")
+  ) {
+    throw new RuntimeManagerError("verification", "A runtime receipt contains an unsafe path.");
+  }
+  const path = resolve(rootDirectory, ...portablePath.split("/"));
+  const relativePath = relative(resolve(rootDirectory), path);
+  if (relativePath.startsWith(`..${sep}`) || relativePath === ".." || isAbsolute(relativePath)) {
+    throw new RuntimeManagerError("verification", "A runtime receipt escapes its package.");
+  }
+  return path;
+}
+
+function portableRelativePath(rootDirectory: string, path: string): string {
+  return relative(rootDirectory, path).split(sep).join("/");
+}
+
+function packageIdentity(spec: RuntimePackageSpec): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        id: spec.id,
+        version: spec.version,
+        archive: spec.archive,
+        download: spec.download,
+        directFileName: spec.directFileName,
+        primaryFile: spec.primaryFile,
+        requiredFiles: spec.requiredFiles,
+      }),
+    )
+    .digest("hex");
+}
+
+function validateManifest(manifest: RuntimeManifest): void {
+  if (
+    manifest.schemaVersion !== 1 ||
+    manifest.platform.trim() === "" ||
+    manifest.architecture.trim() === ""
+  ) {
+    throw new RuntimeManagerError("verification", "The embedded runtime manifest is invalid.");
+  }
+  const tools = [manifest.tools.ytDlp, manifest.tools.ffmpeg, manifest.tools.whisperCpp];
+  const models = [manifest.models.balanced, manifest.models.accurate];
+  if (
+    tools.some(
+      (tool) =>
+        !safePathPart(tool.version) ||
+        !safeFileName(tool.executableName) ||
+        tool.requiredFiles.length === 0 ||
+        tool.requiredFiles.some((file) => !safeFileName(file)) ||
+        !validDownload(tool.download),
+    ) ||
+    models.some(
+      (model) =>
+        !safePathPart(model.version) ||
+        !safeFileName(model.fileName) ||
+        model.modelName.trim() === "" ||
+        !validDownload(model.download),
+    )
+  ) {
+    throw new RuntimeManagerError("verification", "The embedded runtime manifest is invalid.");
+  }
+}
+
+function validDownload(download: RuntimeDownload): boolean {
+  try {
+    const url = new URL(download.url);
+    return (
+      url.protocol === "https:" &&
+      SHA256_PATTERN.test(download.sha256) &&
+      Number.isSafeInteger(download.size) &&
+      download.size > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+function safePathPart(value: string): boolean {
+  return (
+    value !== "" && value !== "." && value !== ".." && !value.includes("/") && !value.includes("\\")
+  );
+}
+
+function safeFileName(value: string): boolean {
+  return safePathPart(value) && basename(value) === value;
+}
+
+function requireInstalled(
+  installed: ReadonlyMap<RuntimePackageId, InstalledPackage>,
+  id: RuntimePackageId,
+): InstalledPackage {
+  const runtimePackage = installed.get(id);
+  if (runtimePackage === undefined) {
+    throw new RuntimeManagerError("install", `Runtime package ${id} was not prepared.`);
+  }
+  return runtimePackage;
+}
+
+function emitProgress(
+  listener: ((progress: RuntimeProgress) => void) | undefined,
+  progress: RuntimeProgress,
+): void {
+  try {
+    listener?.(progress);
+  } catch {
+    // Progress reporting must not break runtime installation.
+  }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted === true) {
+    throw new RuntimeManagerError("cancelled", "Runtime preparation was cancelled.");
+  }
+}
+
+function isMissingPathError(cause: unknown): boolean {
+  return cause instanceof Error && "code" in cause && cause.code === "ENOENT";
+}

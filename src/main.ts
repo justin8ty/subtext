@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 
-import { homedir } from "node:os";
-import { join } from "node:path";
-
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ProcessTerminal, TuiMainScreen, type TUI } from "@earendil-works/pi-tui";
 
@@ -11,6 +8,7 @@ import { WhisperCppAsrAdapter } from "./asr/whisper-cpp-adapter.js";
 import { SubtextApp } from "./app/subtext-app.js";
 import { ArtifactLibrary } from "./artifacts/artifact-library.js";
 import { VideoProcessor } from "./processing/process-video.js";
+import { RuntimeManager, type RuntimeProgress } from "./runtime/runtime-manager.js";
 import {
   PiAiTranscriptSummarizer,
   UnconfiguredTranscriptSummarizer,
@@ -18,23 +16,47 @@ import {
 } from "./summary/transcript-summarizer.js";
 import { YtDlpYoutubeAdapter } from "./youtube/yt-dlp-adapter.js";
 
-const terminal = new ProcessTerminal();
-const tui: TUI = new TuiMainScreen(terminal);
-const library = new ArtifactLibrary();
-const acquisition = new TranscriptAcquirer(
-  new YtDlpYoutubeAdapter(),
-  new WhisperCppAsrAdapter({
-    executable: process.env.SUBTEXT_WHISPER_EXECUTABLE?.trim() || "whisper-cli",
-    modelPath:
-      process.env.SUBTEXT_WHISPER_MODEL?.trim() ||
-      join(homedir(), ".subtext", "runtime", "models", "ggml-large-v3-turbo.bin"),
-  }),
-  library,
-);
-const processing = new VideoProcessor(acquisition, library, createSummarizer());
-const app = new SubtextApp(tui, processing);
+try {
+  await main();
+} catch (error) {
+  const message = error instanceof Error ? error.message : "Subtext failed to start.";
+  process.stderr.write(`Subtext could not prepare its local runtime: ${message}\n`);
+  process.exitCode = 1;
+}
 
-app.start();
+async function main(): Promise<void> {
+  const announcedDownloads = new Set<string>();
+  const runtime = await new RuntimeManager().prepare({
+    quality: "balanced",
+    onProgress: (progress) => reportRuntimeProgress(progress, announcedDownloads),
+  });
+  const terminal = new ProcessTerminal();
+  const tui: TUI = new TuiMainScreen(terminal);
+  const library = new ArtifactLibrary();
+  const acquisition = new TranscriptAcquirer(
+    new YtDlpYoutubeAdapter({
+      executable: runtime.ytDlpExecutable,
+      ffmpegDirectory: runtime.ffmpegDirectory,
+    }),
+    new WhisperCppAsrAdapter({
+      executable: runtime.whisperExecutable,
+      modelPath: runtime.modelPath,
+      modelName: runtime.modelName,
+    }),
+    library,
+  );
+  const processing = new VideoProcessor(acquisition, library, createSummarizer());
+  const app = new SubtextApp(tui, processing);
+  app.start();
+}
+
+function reportRuntimeProgress(progress: RuntimeProgress, announced: Set<string>): void {
+  if (progress.phase !== "downloading" || announced.has(progress.packageId)) {
+    return;
+  }
+  announced.add(progress.packageId);
+  process.stderr.write(`Preparing local runtime: downloading ${progress.packageId}…\n`);
+}
 
 function createSummarizer(): TranscriptSummarizer {
   const provider = process.env.SUBTEXT_LLM_PROVIDER?.trim();

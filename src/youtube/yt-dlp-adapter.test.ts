@@ -35,7 +35,11 @@ await writeFile(output, "fixture audio");
 `,
       "utf8",
     );
-    const adapter = new YtDlpYoutubeAdapter(process.execPath, [script]);
+    const adapter = new YtDlpYoutubeAdapter({
+      executable: process.execPath,
+      executableArguments: [script],
+      ffmpegDirectory: join(directory, "managed-ffmpeg"),
+    });
 
     await adapter.downloadDefaultAudio(
       "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
@@ -48,6 +52,8 @@ await writeFile(output, "fixture audio");
     expect(arguments_).toContain("--extract-audio");
     expect(arguments_).toContain("wav");
     expect(arguments_).toContain("bestaudio[format_note*=original]/bestaudio");
+    expect(arguments_).toContain("--ffmpeg-location");
+    expect(arguments_).toContain(join(directory, "managed-ffmpeg"));
     await expect(readFile(destinationPath, "utf8")).resolves.toBe("fixture audio");
   });
 });

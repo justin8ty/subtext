@@ -20,6 +20,25 @@ export {
 } from "./asr/asr-adapter.js";
 export { WhisperCppAsrAdapter } from "./asr/whisper-cpp-adapter.js";
 export {
+  RuntimeManager,
+  RuntimeManagerError,
+  type RuntimeHttpClient,
+  type RuntimeManagerErrorKind,
+  type RuntimeManagerOptions,
+  type RuntimePaths,
+  type RuntimePreparationMode,
+  type RuntimePreparationOptions,
+  type RuntimeProgress,
+} from "./runtime/runtime-manager.js";
+export {
+  WINDOWS_X64_RUNTIME_MANIFEST,
+  type AsrQuality,
+  type RuntimeDownload,
+  type RuntimeManifest,
+  type RuntimeModelManifest,
+  type RuntimeToolManifest,
+} from "./runtime/runtime-manifest.js";
+export {
   VideoProcessor,
   type SummaryProcessingOptions,
   type SummaryProcessingOutcome,
@@ -54,4 +73,4 @@ export {
   YoutubeAdapterError,
   type YoutubeAdapterErrorKind,
 } from "./youtube/youtube-adapter.js";
-export { YtDlpYoutubeAdapter } from "./youtube/yt-dlp-adapter.js";
+export { YtDlpYoutubeAdapter, type YtDlpYoutubeAdapterOptions } from "./youtube/yt-dlp-adapter.js";

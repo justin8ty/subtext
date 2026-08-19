@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.84.2",
-    "@earendil-works/pi-tui": "^0.84.2"
+    "@earendil-works/pi-tui": "^0.84.2",
+    "extract-zip": "^2.0.1"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.78.0",

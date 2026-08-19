@@ -51,13 +51,21 @@ interface MutableInspectedSourceVideo {
   availability?: string;
 }
 
+export interface YtDlpYoutubeAdapterOptions {
+  readonly executable?: string;
+  readonly executableArguments?: readonly string[];
+  readonly ffmpegDirectory?: string;
+}
+
 export class YtDlpYoutubeAdapter implements YoutubeAdapter {
   readonly executable: string;
   readonly executableArguments: readonly string[];
+  readonly ffmpegDirectory: string | undefined;
 
-  constructor(executable = "yt-dlp", executableArguments: readonly string[] = []) {
-    this.executable = executable;
-    this.executableArguments = executableArguments;
+  constructor(options: YtDlpYoutubeAdapterOptions = {}) {
+    this.executable = options.executable ?? "yt-dlp";
+    this.executableArguments = options.executableArguments ?? [];
+    this.ffmpegDirectory = options.ffmpegDirectory;
   }
 
   async inspect(canonicalUrl: string, signal?: AbortSignal): Promise<InspectedSourceVideo> {
@@ -176,6 +184,7 @@ export class YtDlpYoutubeAdapter implements YoutubeAdapter {
         "--extract-audio",
         "--audio-format",
         "wav",
+        ...ffmpegArguments(this.ffmpegDirectory),
         "--paths",
         `temp:${temporaryDirectory}`,
         "--output",
@@ -197,6 +206,10 @@ export class YtDlpYoutubeAdapter implements YoutubeAdapter {
       });
     }
   }
+}
+
+function ffmpegArguments(ffmpegDirectory?: string): readonly string[] {
+  return ffmpegDirectory === undefined ? [] : ["--ffmpeg-location", ffmpegDirectory];
 }
 
 function decodeCaptionTracks(
