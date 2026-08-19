@@ -8,6 +8,11 @@ import {
   TRANSCRIPT_SCHEMA_VERSION,
   type Transcript,
 } from "../transcript/model.js";
+import {
+  TRANSCRIPT_EXPORT_FILENAMES,
+  renderTranscriptExport,
+  type TranscriptExportFormat,
+} from "./transcript-export.js";
 
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const TRANSCRIPT_FILENAME = "transcript.json";
@@ -32,6 +37,8 @@ export interface StoredSummary {
 export interface ArtifactLibraryEntry {
   readonly videoId: string;
   readonly title: string;
+  readonly canonicalUrl: string;
+  readonly artifactDirectory: string;
   readonly languageCode: string;
   readonly transcriptOrigin: Transcript["provenance"]["origin"];
   readonly hasSummary: boolean;
@@ -42,6 +49,8 @@ export interface ArtifactLibraryAccess {
   listEntries(): Promise<readonly ArtifactLibraryEntry[]>;
   findTranscript(videoId: string): Promise<StoredTranscript | null>;
   findSummary(videoId: string): Promise<StoredSummary | null>;
+  exportTranscript(videoId: string, format: TranscriptExportFormat): Promise<string>;
+  deleteVideoArtifacts(videoId: string): Promise<boolean>;
 }
 
 export class ArtifactLibraryError extends Error {
@@ -81,6 +90,8 @@ export class ArtifactLibrary implements ArtifactLibraryAccess {
           return {
             videoId: storedTranscript.transcript.video.id,
             title: storedTranscript.transcript.video.title,
+            canonicalUrl: storedTranscript.transcript.video.canonicalUrl,
+            artifactDirectory: storedTranscript.artifactDirectory,
             languageCode: storedTranscript.transcript.languageCode,
             transcriptOrigin: storedTranscript.transcript.provenance.origin,
             hasSummary: storedSummary?.revision === storedTranscript.revision,
@@ -145,6 +156,48 @@ export class ArtifactLibrary implements ArtifactLibraryAccess {
         return null;
       }
       throw new ArtifactLibraryError(`Could not read the Summary for ${videoId}.`, {
+        cause: error,
+      });
+    }
+  }
+
+  async exportTranscript(videoId: string, format: TranscriptExportFormat): Promise<string> {
+    const storedTranscript = await this.findTranscript(videoId);
+    if (storedTranscript === null) {
+      throw new ArtifactLibraryError(`No completed Transcript is available for ${videoId}.`);
+    }
+
+    const filename = TRANSCRIPT_EXPORT_FILENAMES[format];
+    const exportPath = join(storedTranscript.artifactDirectory, filename);
+    const temporaryPath = join(
+      storedTranscript.artifactDirectory,
+      `.${filename}-${randomUUID()}.tmp`,
+    );
+    try {
+      await writeFile(temporaryPath, renderTranscriptExport(storedTranscript.transcript, format), {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+      await rename(temporaryPath, exportPath);
+      return exportPath;
+    } catch (error) {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      throw new ArtifactLibraryError(`Could not export the Transcript for ${videoId}.`, {
+        cause: error,
+      });
+    }
+  }
+
+  async deleteVideoArtifacts(videoId: string): Promise<boolean> {
+    validateVideoId(videoId);
+    try {
+      await rm(this.videoDirectory(videoId), { recursive: true });
+      return true;
+    } catch (error) {
+      if (error instanceof Error && isNodeError(error) && error.code === "ENOENT") {
+        return false;
+      }
+      throw new ArtifactLibraryError(`Could not delete Video Artifacts for ${videoId}.`, {
         cause: error,
       });
     }

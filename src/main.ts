@@ -9,6 +9,7 @@ import { ArtifactLibrary } from "./artifacts/artifact-library.js";
 import { ManagedAsrAdapter } from "./asr/managed-asr-adapter.js";
 import { ApplicationConfiguration } from "./config/application-configuration.js";
 import { ApplicationSettingsStore, FileCredentialStore } from "./config/application-settings.js";
+import { SystemExternalOpener } from "./platform/external-opener.js";
 import { VideoProcessor } from "./processing/process-video.js";
 import { RuntimeManager, type RuntimeProgress } from "./runtime/runtime-manager.js";
 import { YtDlpYoutubeAdapter } from "./youtube/yt-dlp-adapter.js";
@@ -48,7 +49,11 @@ async function main(): Promise<void> {
   const processing = new VideoProcessor(acquisition, library, () =>
     configuration.createSummarizer(),
   );
-  const app = new SubtextApp(tui, processing, configuration, library);
+  const app = new SubtextApp(tui, processing, {
+    configuration,
+    library,
+    externalOpener: new SystemExternalOpener(),
+  });
   app.start();
 }
 

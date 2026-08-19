@@ -14,10 +14,12 @@ import {
 
 import type { TranscriptDraft } from "../acquisition/acquire-transcript.js";
 import type { ArtifactLibraryAccess, ArtifactLibraryEntry } from "../artifacts/artifact-library.js";
+import type { TranscriptExportFormat } from "../artifacts/transcript-export.js";
 import type {
   ApplicationConfigurationAccess,
   ConfigurationUpdate,
 } from "../config/application-configuration.js";
+import type { ExternalOpener } from "../platform/external-opener.js";
 import type {
   SummaryProcessingOptions,
   SummaryProcessingOutcome,
@@ -26,7 +28,13 @@ import type {
   VideoProcessingOutcome,
 } from "../processing/process-video.js";
 import { ConfigurationWizard } from "./configuration-wizard.js";
-import { LibraryOverlay } from "./library-overlay.js";
+import {
+  DeleteConfirmationOverlay,
+  LibraryActionsOverlay,
+  LibraryOverlay,
+  TranscriptExportOverlay,
+  type LibraryAction,
+} from "./library-overlay.js";
 import { HelpOverlay, Palette, type PaletteDestination } from "./palette.js";
 import { SummaryView } from "./summary-view.js";
 import { TranscriptDraftView } from "./transcript-draft-view.js";
@@ -35,6 +43,12 @@ import { TranscriptView } from "./transcript-view.js";
 export interface SourceVideoProcessing {
   process(sourceUrl: string, options?: VideoProcessingOptions): Promise<VideoProcessingOutcome>;
   summarize(videoId: string, options?: SummaryProcessingOptions): Promise<SummaryProcessingOutcome>;
+}
+
+export interface SubtextAppOptions {
+  readonly configuration?: ApplicationConfigurationAccess;
+  readonly library?: ArtifactLibraryAccess;
+  readonly externalOpener?: ExternalOpener;
 }
 
 type MutableVideoProcessingOptions = {
@@ -68,6 +82,7 @@ export class SubtextApp extends Container {
   private readonly processing: SourceVideoProcessing;
   private readonly configuration: ApplicationConfigurationAccess | undefined;
   private readonly library: ArtifactLibraryAccess | undefined;
+  private readonly externalOpener: ExternalOpener | undefined;
   private readonly history = new Container();
   private readonly status = new Text("Ready. Paste a YouTube URL and press Enter.", 0, 0);
   private readonly editor: Editor;
@@ -77,17 +92,13 @@ export class SubtextApp extends Container {
   private nextProcessingId = 1;
   private stopped = false;
 
-  constructor(
-    tui: TUI,
-    processing: SourceVideoProcessing,
-    configuration?: ApplicationConfigurationAccess,
-    library?: ArtifactLibraryAccess,
-  ) {
+  constructor(tui: TUI, processing: SourceVideoProcessing, options: SubtextAppOptions = {}) {
     super();
     this.tui = tui;
     this.processing = processing;
-    this.configuration = configuration;
-    this.library = library;
+    this.configuration = options.configuration;
+    this.library = options.library;
+    this.externalOpener = options.externalOpener;
     this.editor = new Editor(tui, EDITOR_THEME, { paddingX: 1, autocompleteMaxVisible: 4 });
     this.editor.onSubmit = (sourceUrl) => this.submit(sourceUrl);
 
@@ -179,6 +190,10 @@ export class SubtextApp extends Container {
       this.tui.requestRender();
       return;
     }
+    this.startVideoProcessing(normalizedUrl, false);
+  }
+
+  private startVideoProcessing(sourceUrl: string, refresh: boolean): void {
     if (this.activeProcessing !== null) {
       this.appendMessage("Another Source Video cannot be submitted while processing is active.");
       this.tui.requestRender();
@@ -186,13 +201,17 @@ export class SubtextApp extends Container {
     }
 
     const active = this.beginProcessing("video");
-    this.appendMessage(`Source Video: ${normalizedUrl}`);
+    this.appendMessage(`${refresh ? "Refreshing" : "Source Video"}: ${sourceUrl}`);
     this.status.setText("Acquiring a Transcript, then generating its Summary… Esc cancels.");
     this.tui.requestRender();
-    void this.processVideo(normalizedUrl, active);
+    void this.processVideo(sourceUrl, active, refresh);
   }
 
-  private async processVideo(sourceUrl: string, active: ActiveProcessing): Promise<void> {
+  private async processVideo(
+    sourceUrl: string,
+    active: ActiveProcessing,
+    refresh: boolean,
+  ): Promise<void> {
     let outcome: VideoProcessingOutcome;
     try {
       const processingOptions: MutableVideoProcessingOptions = {
@@ -200,6 +219,9 @@ export class SubtextApp extends Container {
         onTranscript: (ready) => this.renderReadyTranscript(ready, active),
         onTranscriptDraft: (draft) => this.renderTranscriptDraft(draft, active),
       };
+      if (refresh) {
+        processingOptions.refresh = true;
+      }
       const asrQuality = this.configuration?.current?.asrQuality;
       if (asrQuality !== undefined) {
         processingOptions.asrQuality = asrQuality;
@@ -328,7 +350,16 @@ export class SubtextApp extends Container {
       this.tui.requestRender();
       return;
     }
+    this.regenerateSummary(videoId);
+  }
 
+  private regenerateSummary(videoId: string): void {
+    if (this.activeProcessing !== null) {
+      this.reportLibraryMessage("Summary generation cannot start while processing is active.");
+      return;
+    }
+
+    this.latestTranscriptVideoId = videoId;
     const active = this.beginProcessing("summary");
     this.status.setText("Generating a new Summary… Esc cancels.");
     this.tui.requestRender();
@@ -495,7 +526,7 @@ export class SubtextApp extends Container {
     };
     const select = (entry: ArtifactLibraryEntry): void => {
       close();
-      void this.printLibraryEntry(entry.videoId);
+      this.openLibraryActions(entry);
     };
     handle = this.tui.showOverlay(new LibraryOverlay(this.tui, entries, select, close), {
       width: "80%",
@@ -504,6 +535,159 @@ export class SubtextApp extends Container {
       margin: 1,
     });
     this.tui.requestRender();
+  }
+
+  private openLibraryActions(entry: ArtifactLibraryEntry): void {
+    let handle: OverlayHandle;
+    const close = (): void => {
+      handle.hide();
+      this.restoreEditorFocus();
+      this.tui.requestRender();
+    };
+    const select = (action: LibraryAction): void => {
+      close();
+      this.performLibraryAction(entry, action);
+    };
+    handle = this.tui.showOverlay(new LibraryActionsOverlay(this.tui, entry, select, close), {
+      width: "80%",
+      minWidth: 42,
+      maxHeight: 12,
+      margin: 1,
+    });
+    this.tui.requestRender();
+  }
+
+  private performLibraryAction(entry: ArtifactLibraryEntry, action: LibraryAction): void {
+    switch (action) {
+      case "print": {
+        void this.printLibraryEntry(entry.videoId);
+        return;
+      }
+      case "regenerate-summary": {
+        this.regenerateSummary(entry.videoId);
+        return;
+      }
+      case "export": {
+        this.openTranscriptExport(entry);
+        return;
+      }
+      case "open-video": {
+        void this.openLibraryTarget(entry.canonicalUrl, "Source Video");
+        return;
+      }
+      case "open-directory": {
+        void this.openLibraryTarget(entry.artifactDirectory, "Artifact directory");
+        return;
+      }
+      case "refresh": {
+        this.refreshLibraryEntry(entry);
+        return;
+      }
+      case "delete": {
+        this.confirmLibraryDeletion(entry);
+      }
+    }
+  }
+
+  private openTranscriptExport(entry: ArtifactLibraryEntry): void {
+    let handle: OverlayHandle;
+    const close = (): void => {
+      handle.hide();
+      this.restoreEditorFocus();
+      this.tui.requestRender();
+    };
+    const select = (format: TranscriptExportFormat): void => {
+      close();
+      void this.exportLibraryEntry(entry.videoId, format);
+    };
+    handle = this.tui.showOverlay(new TranscriptExportOverlay(this.tui, select, close), {
+      width: "70%",
+      minWidth: 36,
+      maxHeight: 9,
+      margin: 1,
+    });
+    this.tui.requestRender();
+  }
+
+  private async exportLibraryEntry(videoId: string, format: TranscriptExportFormat): Promise<void> {
+    const library = this.library;
+    if (library === undefined) {
+      return;
+    }
+    try {
+      const exportPath = await library.exportTranscript(videoId, format);
+      this.reportLibraryMessage(`Exported Transcript to ${exportPath}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not export the Transcript.";
+      this.reportLibraryMessage(message);
+    }
+  }
+
+  private async openLibraryTarget(target: string, label: string): Promise<void> {
+    const opener = this.externalOpener;
+    if (opener === undefined) {
+      this.reportLibraryMessage("Opening external targets is not available in this build.");
+      return;
+    }
+    try {
+      await opener.open(target);
+      this.reportLibraryMessage(`${label} opened.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `Could not open ${label}.`;
+      this.reportLibraryMessage(message);
+    }
+  }
+
+  private refreshLibraryEntry(entry: ArtifactLibraryEntry): void {
+    if (this.activeProcessing !== null) {
+      this.reportLibraryMessage("Refresh cannot start while processing is active.");
+      return;
+    }
+    this.startVideoProcessing(entry.canonicalUrl, true);
+  }
+
+  private confirmLibraryDeletion(entry: ArtifactLibraryEntry): void {
+    if (this.activeProcessing !== null) {
+      this.reportLibraryMessage("Video Artifacts cannot be deleted while processing is active.");
+      return;
+    }
+
+    let handle: OverlayHandle;
+    const close = (): void => {
+      handle.hide();
+      this.restoreEditorFocus();
+      this.tui.requestRender();
+    };
+    const confirm = (): void => {
+      close();
+      void this.deleteLibraryEntry(entry.videoId);
+    };
+    handle = this.tui.showOverlay(new DeleteConfirmationOverlay(entry, confirm, close), {
+      width: "75%",
+      minWidth: 40,
+      maxHeight: 8,
+      margin: 1,
+    });
+    this.tui.requestRender();
+  }
+
+  private async deleteLibraryEntry(videoId: string): Promise<void> {
+    const library = this.library;
+    if (library === undefined) {
+      return;
+    }
+    try {
+      const deleted = await library.deleteVideoArtifacts(videoId);
+      if (this.latestTranscriptVideoId === videoId) {
+        this.latestTranscriptVideoId = null;
+      }
+      this.reportLibraryMessage(
+        deleted ? "Video Artifacts deleted." : "The selected Video Artifacts no longer exist.",
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not delete Video Artifacts.";
+      this.reportLibraryMessage(message);
+    }
   }
 
   private async printLibraryEntry(videoId: string): Promise<void> {

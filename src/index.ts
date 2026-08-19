@@ -1,4 +1,8 @@
-export { SubtextApp, type SourceVideoProcessing } from "./app/subtext-app.js";
+export {
+  SubtextApp,
+  type SourceVideoProcessing,
+  type SubtextAppOptions,
+} from "./app/subtext-app.js";
 export { ManagedAsrAdapter } from "./asr/managed-asr-adapter.js";
 export {
   ApplicationConfiguration,
@@ -23,6 +27,16 @@ export {
   type StoredSummary,
   type StoredTranscript,
 } from "./artifacts/artifact-library.js";
+export {
+  TRANSCRIPT_EXPORT_FILENAMES,
+  renderTranscriptExport,
+  type TranscriptExportFormat,
+} from "./artifacts/transcript-export.js";
+export {
+  ExternalOpenError,
+  SystemExternalOpener,
+  type ExternalOpener,
+} from "./platform/external-opener.js";
 export {
   TranscriptAcquirer,
   type AcquisitionOptions,

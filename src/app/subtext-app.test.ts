@@ -14,11 +14,13 @@ import type {
   StoredSummary,
   StoredTranscript,
 } from "../artifacts/artifact-library.js";
+import type { TranscriptExportFormat } from "../artifacts/transcript-export.js";
 import type {
   ApplicationConfigurationAccess,
   ConfigurationUpdate,
 } from "../config/application-configuration.js";
 import type { ApplicationSettings } from "../config/application-settings.js";
+import type { ExternalOpener } from "../platform/external-opener.js";
 import type {
   SummaryProcessingOptions,
   SummaryProcessingOutcome,
@@ -157,7 +159,9 @@ describe("SubtextApp", () => {
     });
     const terminal = new FakeTerminal();
     const tui: TUI = new TuiMainScreen(terminal);
-    const app = new SubtextApp(tui, processing, configuredApplication());
+    const app = new SubtextApp(tui, processing, {
+      configuration: configuredApplication(),
+    });
     app.start();
 
     typeText(terminal, SOURCE_URL);
@@ -268,7 +272,7 @@ describe("SubtextApp", () => {
         reason: "invalid-source-url",
         message: "Enter a URL.",
       }),
-      configuration,
+      { configuration },
     );
     app.start();
 
@@ -301,7 +305,7 @@ describe("SubtextApp", () => {
     const library = new FixtureArtifactLibrary();
     const terminal = new FakeTerminal();
     const tui: TUI = new TuiMainScreen(terminal);
-    const app = new SubtextApp(tui, processing, undefined, library);
+    const app = new SubtextApp(tui, processing, { library });
     app.start();
 
     terminal.send("/");
@@ -311,11 +315,126 @@ describe("SubtextApp", () => {
     await vi.waitFor(() => expect(library.listCalls).toBe(1));
     await vi.waitFor(() => expect(tui.hasOverlay()).toBe(true));
     terminal.send("\r");
+    terminal.send("\r");
 
     await vi.waitFor(() => expect(renderedText(app)).toContain("## Overview"));
     expect(renderedText(app)).toContain("The opening idea.");
     expect(renderedText(app)).toContain("Printed Video Artifacts from the Artifact Library.");
     expect(processing.calls).toBe(0);
+    app.stop();
+  });
+
+  it("regenerates the Summary for the selected Library entry", async () => {
+    const processing = new RetrySummaryProcessing();
+    const library = new FixtureArtifactLibrary();
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(tui, processing, { library });
+    app.start();
+
+    await selectLibraryAction(terminal, tui, library, 1);
+
+    await vi.waitFor(() => expect(processing.summaryCalls).toBe(1));
+    expect(processing.summaryVideoId).toBe(VIDEO_ID);
+    expect(processing.processCalls).toBe(0);
+    app.stop();
+  });
+
+  it("exports the selected Library Transcript on demand", async () => {
+    const library = new FixtureArtifactLibrary();
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(
+      tui,
+      new ImmediateProcessing({
+        status: "needs-input",
+        reason: "invalid-source-url",
+        message: "Enter a URL.",
+      }),
+      { library },
+    );
+    app.start();
+
+    await selectLibraryAction(terminal, tui, library, 2);
+    terminal.send("\u001b[B");
+    terminal.send("\u001b[B");
+    terminal.send("\u001b[B");
+    terminal.send("\r");
+
+    await vi.waitFor(() => expect(library.exportedFormat).toBe("srt"));
+    expect(renderedText(app)).toContain(
+      "Exported Transcript to /tmp/subtext-artifacts/transcript.srt.",
+    );
+    app.stop();
+  });
+
+  it("opens the selected Source Video and Artifact directory", async () => {
+    const library = new FixtureArtifactLibrary();
+    const opener = new FixtureExternalOpener();
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(
+      tui,
+      new ImmediateProcessing({
+        status: "needs-input",
+        reason: "invalid-source-url",
+        message: "Enter a URL.",
+      }),
+      { library, externalOpener: opener },
+    );
+    app.start();
+
+    await selectLibraryAction(terminal, tui, library, 3);
+    await vi.waitFor(() => expect(opener.targets).toEqual([SOURCE_URL]));
+    await selectLibraryAction(terminal, tui, library, 4);
+    await vi.waitFor(() => expect(opener.targets).toEqual([SOURCE_URL, "/tmp/subtext-artifacts"]));
+    app.stop();
+  });
+
+  it("refreshes the selected Library entry instead of reusing it", async () => {
+    const processing = new ImmediateProcessing({
+      status: "needs-input",
+      reason: "invalid-source-url",
+      message: "Fixture outcome.",
+    });
+    const library = new FixtureArtifactLibrary();
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(tui, processing, { library });
+    app.start();
+
+    await selectLibraryAction(terminal, tui, library, 5);
+
+    await vi.waitFor(() => expect(processing.calls).toBe(1));
+    expect(processing.options?.refresh).toBe(true);
+    app.stop();
+  });
+
+  it("deletes selected Video Artifacts only after confirmation", async () => {
+    const library = new FixtureArtifactLibrary();
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(
+      tui,
+      new ImmediateProcessing({
+        status: "needs-input",
+        reason: "invalid-source-url",
+        message: "Enter a URL.",
+      }),
+      { library },
+    );
+    app.start();
+
+    await selectLibraryAction(terminal, tui, library, 6);
+    expect(library.deleteCalls).toBe(0);
+    terminal.send("n");
+    expect(library.deleteCalls).toBe(0);
+
+    await selectLibraryAction(terminal, tui, library, 6);
+    terminal.send("y");
+
+    await vi.waitFor(() => expect(library.deleteCalls).toBe(1));
+    expect(renderedText(app)).toContain("Video Artifacts deleted.");
     app.stop();
   });
 
@@ -496,6 +615,7 @@ class AbortableProcessing implements SourceVideoProcessing {
 class RetrySummaryProcessing implements SourceVideoProcessing {
   processCalls = 0;
   summaryCalls = 0;
+  summaryVideoId: string | undefined;
 
   async process(): Promise<VideoProcessingOutcome> {
     this.processCalls += 1;
@@ -509,8 +629,9 @@ class RetrySummaryProcessing implements SourceVideoProcessing {
     };
   }
 
-  async summarize(): Promise<SummaryProcessingOutcome> {
+  async summarize(videoId: string): Promise<SummaryProcessingOutcome> {
     this.summaryCalls += 1;
+    this.summaryVideoId = videoId;
     return {
       status: "completed",
       summaryMarkdown: SUMMARY_MARKDOWN,
@@ -567,21 +688,47 @@ function renderedText(app: SubtextApp): string {
   return stripTerminalSequences(app.render(80).join("\n"));
 }
 
+async function selectLibraryAction(
+  terminal: FakeTerminal,
+  tui: TUI,
+  library: FixtureArtifactLibrary,
+  actionIndex: number,
+): Promise<void> {
+  const expectedListCalls = library.listCalls + 1;
+  terminal.send("/");
+  terminal.send("l");
+  terminal.send("\r");
+  await vi.waitFor(() => expect(library.listCalls).toBe(expectedListCalls));
+  await vi.waitFor(() => expect(tui.hasOverlay()).toBe(true));
+  terminal.send("\r");
+  for (let index = 0; index < actionIndex; index += 1) {
+    terminal.send("\u001b[B");
+  }
+  terminal.send("\r");
+}
+
 class FixtureArtifactLibrary implements ArtifactLibraryAccess {
   listCalls = 0;
+  deleteCalls = 0;
+  exportedFormat: TranscriptExportFormat | undefined;
+  deleted = false;
 
   async listEntries(): Promise<readonly ArtifactLibraryEntry[]> {
     this.listCalls += 1;
-    return [
-      {
-        videoId: VIDEO_ID,
-        title: TRANSCRIPT.video.title,
-        languageCode: TRANSCRIPT.languageCode,
-        transcriptOrigin: TRANSCRIPT.provenance.origin,
-        hasSummary: true,
-        updatedAtMs: 1,
-      },
-    ];
+    return this.deleted
+      ? []
+      : [
+          {
+            videoId: VIDEO_ID,
+            title: TRANSCRIPT.video.title,
+            canonicalUrl: SOURCE_URL,
+            artifactDirectory: "/tmp/subtext-artifacts",
+            languageCode: TRANSCRIPT.languageCode,
+            transcriptOrigin: TRANSCRIPT.provenance.origin,
+            hasSummary: true,
+            updatedAtMs: 1,
+          },
+        ];
   }
 
   async findTranscript(): Promise<StoredTranscript> {
@@ -598,6 +745,26 @@ class FixtureArtifactLibrary implements ArtifactLibraryAccess {
       artifactDirectory: "/tmp/subtext-artifacts",
       revision: "1-00000000-0000-0000-0000-000000000000",
     };
+  }
+
+  async exportTranscript(_videoId: string, format: TranscriptExportFormat): Promise<string> {
+    this.exportedFormat = format;
+    const extension = format === "markdown" ? "md" : format === "text" ? "txt" : format;
+    return `/tmp/subtext-artifacts/transcript.${extension}`;
+  }
+
+  async deleteVideoArtifacts(): Promise<boolean> {
+    this.deleteCalls += 1;
+    this.deleted = true;
+    return true;
+  }
+}
+
+class FixtureExternalOpener implements ExternalOpener {
+  readonly targets: string[] = [];
+
+  async open(target: string): Promise<void> {
+    this.targets.push(target);
   }
 }
 

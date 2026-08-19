@@ -1,6 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -57,12 +57,35 @@ describe("ArtifactLibrary listing", () => {
       {
         videoId: VIDEO_ID,
         title: "Library fixture",
+        canonicalUrl: `https://www.youtube.com/watch?v=${VIDEO_ID}`,
+        artifactDirectory: stored.artifactDirectory,
         languageCode: "en",
         transcriptOrigin: "creator-caption",
         hasSummary: true,
         updatedAtMs: expect.any(Number),
       },
     ]);
+  });
+
+  it("exports derived formats and deletes Video Artifacts", async () => {
+    const library = new ArtifactLibrary(await temporaryLibrary());
+    await library.commitCaptionTranscript(TRANSCRIPT, '{"events":[]}');
+
+    const markdownPath = await library.exportTranscript(VIDEO_ID, "markdown");
+    const textPath = await library.exportTranscript(VIDEO_ID, "text");
+    const vttPath = await library.exportTranscript(VIDEO_ID, "vtt");
+    const srtPath = await library.exportTranscript(VIDEO_ID, "srt");
+
+    expect(basename(markdownPath)).toBe("transcript.md");
+    await expect(readFile(markdownPath, "utf8")).resolves.toContain("[00:00]");
+    await expect(readFile(textPath, "utf8")).resolves.toBe("[00:00] A retained idea.\n");
+    await expect(readFile(vttPath, "utf8")).resolves.toContain("00:00:00.000 --> 00:00:09.000");
+    await expect(readFile(srtPath, "utf8")).resolves.toContain("00:00:00,000 --> 00:00:09,000");
+
+    await expect(library.deleteVideoArtifacts(VIDEO_ID)).resolves.toBe(true);
+    await expect(library.findTranscript(VIDEO_ID)).resolves.toBeNull();
+    await expect(library.listEntries()).resolves.toEqual([]);
+    await expect(library.deleteVideoArtifacts(VIDEO_ID)).resolves.toBe(false);
   });
 });
 
