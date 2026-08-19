@@ -18,6 +18,8 @@ export {
 export {
   ArtifactLibrary,
   ArtifactLibraryError,
+  type ArtifactLibraryAccess,
+  type ArtifactLibraryEntry,
   type StoredSummary,
   type StoredTranscript,
 } from "./artifacts/artifact-library.js";

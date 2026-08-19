@@ -13,6 +13,7 @@ import {
 } from "@earendil-works/pi-tui";
 
 import type { TranscriptDraft } from "../acquisition/acquire-transcript.js";
+import type { ArtifactLibraryAccess, ArtifactLibraryEntry } from "../artifacts/artifact-library.js";
 import type {
   ApplicationConfigurationAccess,
   ConfigurationUpdate,
@@ -25,6 +26,7 @@ import type {
   VideoProcessingOutcome,
 } from "../processing/process-video.js";
 import { ConfigurationWizard } from "./configuration-wizard.js";
+import { LibraryOverlay } from "./library-overlay.js";
 import { HelpOverlay, Palette, type PaletteDestination } from "./palette.js";
 import { SummaryView } from "./summary-view.js";
 import { TranscriptDraftView } from "./transcript-draft-view.js";
@@ -65,6 +67,7 @@ export class SubtextApp extends Container {
   private readonly tui: TUI;
   private readonly processing: SourceVideoProcessing;
   private readonly configuration: ApplicationConfigurationAccess | undefined;
+  private readonly library: ArtifactLibraryAccess | undefined;
   private readonly history = new Container();
   private readonly status = new Text("Ready. Paste a YouTube URL and press Enter.", 0, 0);
   private readonly editor: Editor;
@@ -78,11 +81,13 @@ export class SubtextApp extends Container {
     tui: TUI,
     processing: SourceVideoProcessing,
     configuration?: ApplicationConfigurationAccess,
+    library?: ArtifactLibraryAccess,
   ) {
     super();
     this.tui = tui;
     this.processing = processing;
     this.configuration = configuration;
+    this.library = library;
     this.editor = new Editor(tui, EDITOR_THEME, { paddingX: 1, autocompleteMaxVisible: 4 });
     this.editor.onSubmit = (sourceUrl) => this.submit(sourceUrl);
 
@@ -447,11 +452,100 @@ export class SubtextApp extends Container {
       this.stop();
       return;
     }
+    if (destination === "library") {
+      void this.openLibrary();
+      return;
+    }
     if (destination === "options") {
       this.openConfiguration(false);
       return;
     }
     this.openHelp();
+  }
+
+  private async openLibrary(): Promise<void> {
+    const library = this.library;
+    if (library === undefined) {
+      this.reportLibraryMessage("The Artifact Library is not available in this build.");
+      return;
+    }
+
+    let entries: readonly ArtifactLibraryEntry[];
+    try {
+      entries = await library.listEntries();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not read the Artifact Library.";
+      this.reportLibraryMessage(message);
+      return;
+    }
+    if (this.stopped) {
+      return;
+    }
+    if (entries.length === 0) {
+      this.reportLibraryMessage("The Artifact Library is empty.");
+      return;
+    }
+
+    let handle: OverlayHandle;
+    const close = (): void => {
+      handle.hide();
+      this.restoreEditorFocus();
+      this.tui.requestRender();
+    };
+    const select = (entry: ArtifactLibraryEntry): void => {
+      close();
+      void this.printLibraryEntry(entry.videoId);
+    };
+    handle = this.tui.showOverlay(new LibraryOverlay(this.tui, entries, select, close), {
+      width: "80%",
+      minWidth: 42,
+      maxHeight: 16,
+      margin: 1,
+    });
+    this.tui.requestRender();
+  }
+
+  private async printLibraryEntry(videoId: string): Promise<void> {
+    const library = this.library;
+    if (library === undefined) {
+      return;
+    }
+
+    try {
+      const [storedTranscript, storedSummary] = await Promise.all([
+        library.findTranscript(videoId),
+        library.findSummary(videoId),
+      ]);
+      if (storedTranscript === null) {
+        this.reportLibraryMessage("The selected Transcript is no longer available.");
+        return;
+      }
+
+      this.latestTranscriptVideoId = videoId;
+      this.appendComponent(new TranscriptView(storedTranscript.transcript));
+      if (storedSummary !== null && storedSummary.revision === storedTranscript.revision) {
+        this.appendComponent(new SummaryView(storedSummary.markdown));
+      } else {
+        this.appendMessage("Unsummarized Transcript — no current Summary is available.");
+      }
+      if (this.activeProcessing === null) {
+        this.status.setText("Printed Video Artifacts from the Artifact Library.");
+      }
+      this.tui.requestRender();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not print Video Artifacts.";
+      this.reportLibraryMessage(message);
+    }
+  }
+
+  private reportLibraryMessage(message: string): void {
+    if (this.activeProcessing === null) {
+      this.status.setText(message);
+    } else {
+      this.appendMessage(message);
+    }
+    this.tui.requestRender();
   }
 
   private openConfiguration(required: boolean): void {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -29,6 +29,21 @@ export interface StoredSummary {
   readonly revision: string;
 }
 
+export interface ArtifactLibraryEntry {
+  readonly videoId: string;
+  readonly title: string;
+  readonly languageCode: string;
+  readonly transcriptOrigin: Transcript["provenance"]["origin"];
+  readonly hasSummary: boolean;
+  readonly updatedAtMs: number;
+}
+
+export interface ArtifactLibraryAccess {
+  listEntries(): Promise<readonly ArtifactLibraryEntry[]>;
+  findTranscript(videoId: string): Promise<StoredTranscript | null>;
+  findSummary(videoId: string): Promise<StoredSummary | null>;
+}
+
 export class ArtifactLibraryError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -36,11 +51,50 @@ export class ArtifactLibraryError extends Error {
   }
 }
 
-export class ArtifactLibrary {
+export class ArtifactLibrary implements ArtifactLibraryAccess {
   readonly rootDirectory: string;
 
   constructor(rootDirectory = join(homedir(), ".subtext")) {
     this.rootDirectory = rootDirectory;
+  }
+
+  async listEntries(): Promise<readonly ArtifactLibraryEntry[]> {
+    let directories;
+    try {
+      directories = await readdir(join(this.rootDirectory, "videos"), { withFileTypes: true });
+    } catch (error) {
+      if (error instanceof Error && isNodeError(error) && error.code === "ENOENT") {
+        return [];
+      }
+      throw new ArtifactLibraryError("Could not read the Artifact Library.", { cause: error });
+    }
+
+    const entries = await Promise.all(
+      directories
+        .filter((directory) => directory.isDirectory() && VIDEO_ID_PATTERN.test(directory.name))
+        .map(async (directory): Promise<ArtifactLibraryEntry | null> => {
+          const storedTranscript = await this.findTranscript(directory.name);
+          if (storedTranscript === null) {
+            return null;
+          }
+          const storedSummary = await this.findSummary(directory.name);
+          return {
+            videoId: storedTranscript.transcript.video.id,
+            title: storedTranscript.transcript.video.title,
+            languageCode: storedTranscript.transcript.languageCode,
+            transcriptOrigin: storedTranscript.transcript.provenance.origin,
+            hasSummary: storedSummary?.revision === storedTranscript.revision,
+            updatedAtMs: revisionTimestamp(storedTranscript.revision),
+          };
+        }),
+    );
+
+    return entries
+      .filter((entry): entry is ArtifactLibraryEntry => entry !== null)
+      .sort(
+        (left, right) =>
+          right.updatedAtMs - left.updatedAtMs || left.title.localeCompare(right.title),
+      );
   }
 
   async findTranscript(videoId: string): Promise<StoredTranscript | null> {
@@ -253,6 +307,10 @@ function validateRevision(revision: string): void {
   if (!/^\d+-[0-9a-f-]{36}$/u.test(revision)) {
     throw new ArtifactLibraryError("The current Video Artifact revision is invalid.");
   }
+}
+
+function revisionTimestamp(revision: string): number {
+  return Number.parseInt(revision.slice(0, revision.indexOf("-")), 10);
 }
 
 function validateTranscript(transcript: Transcript, expectedVideoId: string): void {

@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   const processing = new VideoProcessor(acquisition, library, () =>
     configuration.createSummarizer(),
   );
-  const app = new SubtextApp(tui, processing, configuration);
+  const app = new SubtextApp(tui, processing, configuration, library);
   app.start();
 }
 

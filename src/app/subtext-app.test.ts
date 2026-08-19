@@ -9,6 +9,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AcquisitionOptions } from "../acquisition/acquire-transcript.js";
 import type {
+  ArtifactLibraryAccess,
+  ArtifactLibraryEntry,
+  StoredSummary,
+  StoredTranscript,
+} from "../artifacts/artifact-library.js";
+import type {
   ApplicationConfigurationAccess,
   ConfigurationUpdate,
 } from "../config/application-configuration.js";
@@ -286,6 +292,33 @@ describe("SubtextApp", () => {
     app.stop();
   });
 
+  it("prints a selected Transcript and Summary from the Artifact Library", async () => {
+    const processing = new ImmediateProcessing({
+      status: "needs-input",
+      reason: "invalid-source-url",
+      message: "Enter a URL.",
+    });
+    const library = new FixtureArtifactLibrary();
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(tui, processing, undefined, library);
+    app.start();
+
+    terminal.send("/");
+    terminal.send("l");
+    terminal.send("\r");
+
+    await vi.waitFor(() => expect(library.listCalls).toBe(1));
+    await vi.waitFor(() => expect(tui.hasOverlay()).toBe(true));
+    terminal.send("\r");
+
+    await vi.waitFor(() => expect(renderedText(app)).toContain("## Overview"));
+    expect(renderedText(app)).toContain("The opening idea.");
+    expect(renderedText(app)).toContain("Printed Video Artifacts from the Artifact Library.");
+    expect(processing.calls).toBe(0);
+    app.stop();
+  });
+
   it("opens the searchable palette and can quit through a filtered result", () => {
     const terminal = new FakeTerminal();
     const tui: TUI = new TuiMainScreen(terminal);
@@ -532,6 +565,40 @@ function typeText(terminal: FakeTerminal, text: string): void {
 
 function renderedText(app: SubtextApp): string {
   return stripTerminalSequences(app.render(80).join("\n"));
+}
+
+class FixtureArtifactLibrary implements ArtifactLibraryAccess {
+  listCalls = 0;
+
+  async listEntries(): Promise<readonly ArtifactLibraryEntry[]> {
+    this.listCalls += 1;
+    return [
+      {
+        videoId: VIDEO_ID,
+        title: TRANSCRIPT.video.title,
+        languageCode: TRANSCRIPT.languageCode,
+        transcriptOrigin: TRANSCRIPT.provenance.origin,
+        hasSummary: true,
+        updatedAtMs: 1,
+      },
+    ];
+  }
+
+  async findTranscript(): Promise<StoredTranscript> {
+    return {
+      transcript: TRANSCRIPT,
+      artifactDirectory: "/tmp/subtext-artifacts",
+      revision: "1-00000000-0000-0000-0000-000000000000",
+    };
+  }
+
+  async findSummary(): Promise<StoredSummary> {
+    return {
+      markdown: SUMMARY_MARKDOWN,
+      artifactDirectory: "/tmp/subtext-artifacts",
+      revision: "1-00000000-0000-0000-0000-000000000000",
+    };
+  }
 }
 
 class FirstRunConfiguration implements ApplicationConfigurationAccess {
