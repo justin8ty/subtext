@@ -12,6 +12,7 @@ import type {
 import { YoutubeAdapterError } from "./youtube-adapter.js";
 
 const MAX_PROCESS_OUTPUT_BYTES = 32 * 1024 * 1024;
+const MAX_CAPTION_BYTES = 32 * 1024 * 1024;
 const DEFAULT_AUDIO_FORMAT = "bestaudio[format_note*=original]/bestaudio";
 
 interface YtDlpCaptionFormat {
@@ -154,7 +155,21 @@ export class YtDlpYoutubeAdapter implements YoutubeAdapter {
       );
     }
 
-    return response.text();
+    try {
+      return await readCaptionResponse(response);
+    } catch (error) {
+      if (error instanceof YoutubeAdapterError) {
+        throw error;
+      }
+      if (signal?.aborted === true) {
+        throw new YoutubeAdapterError("cancelled", "Caption Track download was cancelled.", {
+          cause: error,
+        });
+      }
+      throw new YoutubeAdapterError("failed", "Could not read the selected Caption Track.", {
+        cause: error,
+      });
+    }
   }
 
   async downloadDefaultAudio(
@@ -206,6 +221,39 @@ export class YtDlpYoutubeAdapter implements YoutubeAdapter {
       });
     }
   }
+}
+
+async function readCaptionResponse(response: Response): Promise<string> {
+  const contentLength = Number.parseInt(response.headers.get("content-length") ?? "", 10);
+  if (Number.isFinite(contentLength) && contentLength > MAX_CAPTION_BYTES) {
+    throw new YoutubeAdapterError(
+      "failed",
+      "The Caption Track is larger than Subtext can safely process.",
+    );
+  }
+  if (response.body === null) {
+    return "";
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const result = await reader.read();
+    if (result.done) {
+      break;
+    }
+    totalBytes += result.value.byteLength;
+    if (totalBytes > MAX_CAPTION_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw new YoutubeAdapterError(
+        "failed",
+        "The Caption Track is larger than Subtext can safely process.",
+      );
+    }
+    chunks.push(result.value);
+  }
+  return Buffer.concat(chunks, totalBytes).toString("utf8");
 }
 
 function ffmpegArguments(ffmpegDirectory?: string): readonly string[] {

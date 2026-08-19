@@ -111,6 +111,38 @@ describe("PiAiTranscriptSummarizer", () => {
     expect(faux.state.callCount).toBeGreaterThan(1);
   });
 
+  it("handles a six-hour Transcript through bounded hierarchical requests", async () => {
+    const faux = fauxProvider({
+      models: [{ id: "small-context", contextWindow: 1_000, maxTokens: 300 }],
+    });
+    const models = createModels();
+    models.setProvider(faux.provider);
+    faux.setResponses(
+      Array.from({ length: 1_000 }, () => (context: Context) => {
+        const request = context.messages[0];
+        const content = request?.role === "user" ? JSON.stringify(request.content) : "";
+        return fauxAssistantMessage(
+          content.includes("Write the final Markdown Summary")
+            ? SUMMARY
+            : "[00:00] Compact grounded note.",
+        );
+      }),
+    );
+    const sixHoursMs = 6 * 60 * 60 * 1_000;
+    const segments: Transcript["segments"] = [
+      ...defaultSegments(),
+      ...Array.from({ length: 359 }, (_, index) => ({
+        startMs: (index + 1) * 60_000,
+        endMs: (index + 1) * 60_000 + 30_000,
+        text: `Minute ${(index + 1).toString()} ${"grounded long-video detail ".repeat(8)}`,
+      })),
+    ];
+    const summarizer = new PiAiTranscriptSummarizer(models, faux.getModel());
+
+    await expect(summarizer.summarize(transcript(segments, sixHoursMs))).resolves.toBe(SUMMARY);
+    expect(faux.state.callCount).toBeGreaterThan(10);
+  });
+
   it("rejects a response that omits the required grounded structure", async () => {
     const faux = fauxProvider();
     const models = createModels();
@@ -152,14 +184,17 @@ describe("PiAiTranscriptSummarizer", () => {
   });
 });
 
-function transcript(segments: Transcript["segments"] = defaultSegments()): Transcript {
+function transcript(
+  segments: Transcript["segments"] = defaultSegments(),
+  durationMs = 10_000,
+): Transcript {
   return {
     schemaVersion: TRANSCRIPT_SCHEMA_VERSION,
     video: {
       id: "dQw4w9WgXcQ",
       title: "Metadata title must stay local",
       canonicalUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      durationMs: 10_000,
+      durationMs,
     },
     languageCode: "en",
     segments,

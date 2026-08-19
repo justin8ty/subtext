@@ -17,6 +17,7 @@ import {
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const TRANSCRIPT_FILENAME = "transcript.json";
 const SUMMARY_FILENAME = "summary.md";
+const ARTIFACT_COMMIT_LOCKS = new Map<string, Promise<void>>();
 
 interface CurrentRevision {
   readonly revision: string;
@@ -242,32 +243,34 @@ export class ArtifactLibrary implements ArtifactLibraryAccess {
     requireActiveSummaryCommit(signal);
 
     const videoDirectory = this.videoDirectory(videoId);
-    const currentRevision = await readCurrentRevision(videoDirectory);
-    requireActiveSummaryCommit(signal);
-    if (currentRevision !== expectedRevision) {
-      throw new ArtifactLibraryError(
-        `The Transcript for ${videoId} changed before its Summary could be committed.`,
-      );
-    }
-
-    const artifactDirectory = join(videoDirectory, "revisions", expectedRevision);
-    const temporarySummary = join(artifactDirectory, `.summary-${randomUUID()}.md`);
-    const summary = join(artifactDirectory, SUMMARY_FILENAME);
-    try {
-      await writeFile(temporarySummary, `${markdown.trimEnd()}\n`, {
-        encoding: "utf8",
-        mode: 0o600,
-      });
+    return withArtifactCommitLock(videoDirectory, async () => {
+      const currentRevision = await readCurrentRevision(videoDirectory);
       requireActiveSummaryCommit(signal);
-      await rename(temporarySummary, summary);
-    } catch (error) {
-      await rm(temporarySummary, { force: true }).catch(() => undefined);
-      throw new ArtifactLibraryError(`Could not commit the Summary for ${videoId}.`, {
-        cause: error,
-      });
-    }
+      if (currentRevision !== expectedRevision) {
+        throw new ArtifactLibraryError(
+          `The Transcript for ${videoId} changed before its Summary could be committed.`,
+        );
+      }
 
-    return { markdown: `${markdown.trimEnd()}\n`, artifactDirectory, revision: expectedRevision };
+      const artifactDirectory = join(videoDirectory, "revisions", expectedRevision);
+      const temporarySummary = join(artifactDirectory, `.summary-${randomUUID()}.md`);
+      const summary = join(artifactDirectory, SUMMARY_FILENAME);
+      try {
+        await writeFile(temporarySummary, `${markdown.trimEnd()}\n`, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+        requireActiveSummaryCommit(signal);
+        await rename(temporarySummary, summary);
+      } catch (error) {
+        await rm(temporarySummary, { force: true }).catch(() => undefined);
+        throw new ArtifactLibraryError(`Could not commit the Summary for ${videoId}.`, {
+          cause: error,
+        });
+      }
+
+      return { markdown: `${markdown.trimEnd()}\n`, artifactDirectory, revision: expectedRevision };
+    });
   }
 
   private async commitTranscriptRevision(
@@ -275,39 +278,36 @@ export class ArtifactLibrary implements ArtifactLibraryAccess {
     rawCaption?: string,
   ): Promise<StoredTranscript> {
     const videoDirectory = this.videoDirectory(transcript.video.id);
-    const revisionsDirectory = join(videoDirectory, "revisions");
-    const previousRevision = await readCurrentRevision(videoDirectory);
-    const revision = `${Date.now()}-${randomUUID()}`;
-    const artifactDirectory = join(revisionsDirectory, revision);
-    await mkdir(artifactDirectory, { recursive: true, mode: 0o700 });
+    return withArtifactCommitLock(videoDirectory, async () => {
+      const revisionsDirectory = join(videoDirectory, "revisions");
+      const revision = `${Date.now()}-${randomUUID()}`;
+      const artifactDirectory = join(revisionsDirectory, revision);
 
-    try {
-      if (rawCaption !== undefined) {
-        await writeFile(join(artifactDirectory, CAPTION_TRACK_ARTIFACT_FILENAME), rawCaption, {
-          encoding: "utf8",
-          mode: 0o600,
-        });
+      try {
+        await mkdir(artifactDirectory, { recursive: true, mode: 0o700 });
+        if (rawCaption !== undefined) {
+          await writeFile(join(artifactDirectory, CAPTION_TRACK_ARTIFACT_FILENAME), rawCaption, {
+            encoding: "utf8",
+            mode: 0o600,
+          });
+        }
+        await writeFile(
+          join(artifactDirectory, TRANSCRIPT_FILENAME),
+          `${JSON.stringify(transcript, null, 2)}\n`,
+          { encoding: "utf8", mode: 0o600 },
+        );
+        await switchCurrentRevision(videoDirectory, revision);
+      } catch (error) {
+        await rm(artifactDirectory, { recursive: true, force: true }).catch(() => undefined);
+        throw new ArtifactLibraryError(
+          `Could not commit Video Artifacts for ${transcript.video.id}.`,
+          { cause: error },
+        );
       }
-      await writeFile(
-        join(artifactDirectory, TRANSCRIPT_FILENAME),
-        `${JSON.stringify(transcript, null, 2)}\n`,
-        { encoding: "utf8", mode: 0o600 },
-      );
-      await switchCurrentRevision(videoDirectory, revision);
-    } catch (error) {
-      await rm(artifactDirectory, { recursive: true, force: true }).catch(() => undefined);
-      throw new ArtifactLibraryError(
-        `Could not commit Video Artifacts for ${transcript.video.id}.`,
-        { cause: error },
-      );
-    }
 
-    if (previousRevision !== null && previousRevision !== revision) {
-      await rm(join(revisionsDirectory, previousRevision), { recursive: true, force: true }).catch(
-        () => undefined,
-      );
-    }
-    return { transcript, artifactDirectory, revision };
+      await removeObsoleteRevisions(revisionsDirectory, revision);
+      return { transcript, artifactDirectory, revision };
+    });
   }
 
   private videoDirectory(videoId: string): string {
@@ -319,11 +319,62 @@ async function switchCurrentRevision(videoDirectory: string, revision: string): 
   await mkdir(videoDirectory, { recursive: true, mode: 0o700 });
   const temporaryPointer = join(videoDirectory, `.current-${randomUUID()}.json`);
   const currentPointer = join(videoDirectory, "current.json");
-  await writeFile(temporaryPointer, `${JSON.stringify({ revision }, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
+  try {
+    await writeFile(temporaryPointer, `${JSON.stringify({ revision }, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    await rename(temporaryPointer, currentPointer);
+  } finally {
+    await rm(temporaryPointer, { force: true }).catch(() => undefined);
+  }
+}
+
+async function removeObsoleteRevisions(
+  revisionsDirectory: string,
+  currentRevision: string,
+): Promise<void> {
+  let entries;
+  try {
+    entries = await readdir(revisionsDirectory, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() && entry.name !== currentRevision)
+      .map((entry) =>
+        rm(join(revisionsDirectory, entry.name), { recursive: true, force: true }).catch(
+          () => undefined,
+        ),
+      ),
+  );
+}
+
+async function withArtifactCommitLock<T>(
+  artifactKey: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = ARTIFACT_COMMIT_LOCKS.get(artifactKey) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
   });
-  await rename(temporaryPointer, currentPointer);
+  const tail = previous.then(
+    () => current,
+    () => current,
+  );
+  ARTIFACT_COMMIT_LOCKS.set(artifactKey, tail);
+  await previous.catch(() => undefined);
+
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (ARTIFACT_COMMIT_LOCKS.get(artifactKey) === tail) {
+      ARTIFACT_COMMIT_LOCKS.delete(artifactKey);
+    }
+  }
 }
 
 async function readCurrentRevision(videoDirectory: string): Promise<string | null> {
