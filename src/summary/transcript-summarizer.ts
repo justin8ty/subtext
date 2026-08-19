@@ -1,5 +1,6 @@
 import type { Api, Context, Model, Models, ModelsSimpleStreamOptions } from "@earendil-works/pi-ai";
 
+import type { SummaryDetail } from "../config/application-settings.js";
 import type { Transcript, TranscriptSegment } from "../transcript/model.js";
 
 const SYSTEM_PROMPT = `You summarize a Source Video using only its timestamped Transcript.
@@ -46,16 +47,18 @@ export interface TranscriptSummarizer {
 export class PiAiTranscriptSummarizer implements TranscriptSummarizer {
   readonly models: Models;
   readonly model: Model<Api>;
+  readonly detail: SummaryDetail;
 
-  constructor(models: Models, model: Model<Api>) {
+  constructor(models: Models, model: Model<Api>, detail: SummaryDetail = "standard") {
     this.models = models;
     this.model = model;
+    this.detail = detail;
   }
 
   async summarize(transcript: Transcript, signal?: AbortSignal): Promise<string> {
     throwIfAborted(signal);
     const outputTokens = summaryOutputTokens(this.model);
-    const inputTokens = summaryInputTokens(this.model, outputTokens);
+    const inputTokens = summaryInputTokens(this.model, outputTokens, this.detail);
     const transcriptText = formatTranscript(transcript.segments);
 
     let sourceMaterial = transcriptText;
@@ -69,7 +72,7 @@ export class PiAiTranscriptSummarizer implements TranscriptSummarizer {
     }
 
     const markdown = await this.request(
-      finalSummaryInstruction(),
+      finalSummaryInstruction(this.detail),
       sourceMaterial,
       outputTokens,
       signal,
@@ -174,8 +177,14 @@ export class UnconfiguredTranscriptSummarizer implements TranscriptSummarizer {
   }
 }
 
-function finalSummaryInstruction(): string {
-  return `Write the final Markdown Summary. Start with "# Summary" and include these exact second-level headings in order:
+function finalSummaryInstruction(detail: SummaryDetail): string {
+  const detailInstruction =
+    detail === "concise"
+      ? "Keep the Summary concise and prioritize only the most important material."
+      : detail === "detailed"
+        ? "Provide a detailed Summary while avoiding repetition and unsupported inference."
+        : "Use a balanced level of detail.";
+  return `Write the final Markdown Summary. ${detailInstruction} Start with "# Summary" and include these exact second-level headings in order:
 ${FINAL_SECTIONS.map((section) => `## ${section}`).join("\n")}
 
 Ground every substantive point in the supplied material. Include timestamp references in [MM:SS] or [HH:MM:SS] form. Under Chapters, give timestamped chapter entries. If the Transcript does not support a requested category, say so rather than inventing content.`;
@@ -203,10 +212,14 @@ function summaryOutputTokens(model: Model<Api>): number {
   return Math.max(1, Math.min(MAX_OUTPUT_TOKENS, model.maxTokens, preferredTokens));
 }
 
-function summaryInputTokens(model: Model<Api>, outputTokens: number): number {
+function summaryInputTokens(
+  model: Model<Api>,
+  outputTokens: number,
+  detail: SummaryDetail,
+): number {
   const usableContext = Math.floor(model.contextWindow * CONTEXT_USAGE_FRACTION);
   const promptOverhead = estimateTokens(
-    `${SYSTEM_PROMPT}\n${finalSummaryInstruction()}\n${CHUNK_INSTRUCTION}\n${REDUCTION_INSTRUCTION}\n${MATERIAL_WRAPPER}`,
+    `${SYSTEM_PROMPT}\n${finalSummaryInstruction(detail)}\n${CHUNK_INSTRUCTION}\n${REDUCTION_INSTRUCTION}\n${MATERIAL_WRAPPER}`,
   );
   return Math.max(1, usableContext - outputTokens - promptOverhead);
 }

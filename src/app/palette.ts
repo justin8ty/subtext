@@ -11,9 +11,10 @@ import {
   type TUI,
 } from "@earendil-works/pi-tui";
 
-export type PaletteDestination = "help" | "quit";
+export type PaletteDestination = "options" | "help" | "quit";
 
 const PALETTE_ITEMS: readonly SelectItem[] = [
+  { value: "options", label: "Options", description: "Configure Summary and ASR preferences" },
   { value: "help", label: "Help", description: "Show keyboard help" },
   { value: "quit", label: "Quit", description: "Exit Subtext" },
 ];
@@ -118,7 +119,10 @@ export class HelpOverlay extends Container {
 }
 
 function parseDestination(value: string): PaletteDestination {
-  return value === "quit" ? "quit" : "help";
+  if (value === "quit" || value === "options") {
+    return value;
+  }
+  return "help";
 }
 
 function identity(text: string): string {

@@ -57,6 +57,28 @@ describe("PiAiTranscriptSummarizer", () => {
     }
   });
 
+  it("applies the selected Summary detail to the final request", async () => {
+    const faux = fauxProvider();
+    const models = createModels();
+    models.setProvider(faux.provider);
+    let receivedContext: Context | undefined;
+    faux.setResponses([
+      (context) => {
+        receivedContext = context;
+        return fauxAssistantMessage(SUMMARY);
+      },
+    ]);
+    const summarizer = new PiAiTranscriptSummarizer(models, faux.getModel(), "detailed");
+
+    await summarizer.summarize(transcript());
+
+    const message = receivedContext?.messages[0];
+    expect(message?.role).toBe("user");
+    if (message?.role === "user") {
+      expect(message.content).toContain("Provide a detailed Summary");
+    }
+  });
+
   it("uses hierarchical reduction when the Transcript exceeds the model context", async () => {
     const faux = fauxProvider({
       models: [{ id: "small-context", contextWindow: 1_000, maxTokens: 300 }],

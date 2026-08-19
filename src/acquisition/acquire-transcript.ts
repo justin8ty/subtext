@@ -9,6 +9,7 @@ import {
   type AsrTranscriptionOptions,
 } from "../asr/asr-adapter.js";
 import { ArtifactLibrary, ArtifactLibraryError } from "../artifacts/artifact-library.js";
+import type { AsrQuality } from "../runtime/runtime-manifest.js";
 import { parseYoutubeUrl } from "../source-video/youtube-url.js";
 import { CaptionNormalizationError, normalizeJson3Caption } from "../transcript/normalize-json3.js";
 import { selectEligibleCaption } from "../transcript/select-caption.js";
@@ -47,6 +48,7 @@ export interface TranscriptDraft {
 export interface AcquisitionOptions {
   readonly refresh?: boolean;
   readonly signal?: AbortSignal;
+  readonly asrQuality?: AsrQuality;
   readonly onTranscriptDraft?: (draft: TranscriptDraft) => void;
 }
 
@@ -245,6 +247,9 @@ export class TranscriptAcquirer {
       }
 
       const asrOptions: MutableAsrTranscriptionOptions = { durationMs: video.durationMs };
+      if (options.asrQuality !== undefined) {
+        asrOptions.quality = options.asrQuality;
+      }
       if (video.spokenLanguage !== undefined) {
         asrOptions.languageCode = video.spokenLanguage;
       }

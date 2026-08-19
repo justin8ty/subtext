@@ -167,6 +167,7 @@ describe("TranscriptAcquirer", () => {
     const acquirer = new TranscriptAcquirer(youtube, asr, library, workspaceRoot);
 
     const outcome = await acquirer.acquire(`https://www.youtube.com/watch?v=${VIDEO_ID}`, {
+      asrQuality: "accurate",
       onTranscriptDraft: (draft) => drafts.push(draft.segment.text),
     });
 
@@ -181,6 +182,7 @@ describe("TranscriptAcquirer", () => {
     expect(drafts).toEqual(["ASR opening", "ASR ending"]);
     expect(asr.receivedLanguageCode).toBeUndefined();
     expect(asr.receivedDurationMs).toBe(10_000);
+    expect(asr.receivedQuality).toBe("accurate");
     expect(youtube.downloadedAudioPath).toMatch(/default-audio\.wav$/u);
     expect(await readdir(workspaceRoot)).toEqual([]);
     if (outcome.status === "completed") {
@@ -313,6 +315,7 @@ class ScriptedAsrAdapter implements AsrAdapter {
   readonly draftSegments: readonly AsrTranscript["segments"][number][];
   receivedDurationMs: number | undefined;
   receivedLanguageCode: string | undefined;
+  receivedQuality: AsrTranscriptionOptions["quality"];
 
   constructor(
     result: AsrTranscript | Error,
@@ -330,6 +333,7 @@ class ScriptedAsrAdapter implements AsrAdapter {
   ): Promise<AsrTranscript> {
     this.receivedDurationMs = options.durationMs;
     this.receivedLanguageCode = options.languageCode;
+    this.receivedQuality = options.quality;
     for (const segment of this.draftSegments) {
       options.onSegment?.(segment);
     }

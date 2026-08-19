@@ -1,4 +1,20 @@
 export { SubtextApp, type SourceVideoProcessing } from "./app/subtext-app.js";
+export { ManagedAsrAdapter } from "./asr/managed-asr-adapter.js";
+export {
+  ApplicationConfiguration,
+  type ApplicationConfigurationAccess,
+  type ConfigurationModelOption,
+  type ConfigurationProviderOption,
+  type ConfigurationUpdate,
+} from "./config/application-configuration.js";
+export {
+  ApplicationSettingsError,
+  ApplicationSettingsStore,
+  FileCredentialStore,
+  type ApplicationSettings,
+  type ApplicationSettingsInput,
+  type SummaryDetail,
+} from "./config/application-settings.js";
 export {
   ArtifactLibrary,
   ArtifactLibraryError,
@@ -44,6 +60,7 @@ export {
   type SummaryProcessingOutcome,
   type TranscriptAcquisition,
   type TranscriptReady,
+  type TranscriptSummarizerFactory,
   type VideoProcessingOptions,
   type VideoProcessingOutcome,
 } from "./processing/process-video.js";

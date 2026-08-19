@@ -4,30 +4,34 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ProcessTerminal, TuiMainScreen, type TUI } from "@earendil-works/pi-tui";
 
 import { TranscriptAcquirer } from "./acquisition/acquire-transcript.js";
-import { WhisperCppAsrAdapter } from "./asr/whisper-cpp-adapter.js";
 import { SubtextApp } from "./app/subtext-app.js";
 import { ArtifactLibrary } from "./artifacts/artifact-library.js";
+import { ManagedAsrAdapter } from "./asr/managed-asr-adapter.js";
+import { ApplicationConfiguration } from "./config/application-configuration.js";
+import { ApplicationSettingsStore, FileCredentialStore } from "./config/application-settings.js";
 import { VideoProcessor } from "./processing/process-video.js";
 import { RuntimeManager, type RuntimeProgress } from "./runtime/runtime-manager.js";
-import {
-  PiAiTranscriptSummarizer,
-  UnconfiguredTranscriptSummarizer,
-  type TranscriptSummarizer,
-} from "./summary/transcript-summarizer.js";
 import { YtDlpYoutubeAdapter } from "./youtube/yt-dlp-adapter.js";
 
 try {
   await main();
 } catch (error) {
   const message = error instanceof Error ? error.message : "Subtext failed to start.";
-  process.stderr.write(`Subtext could not prepare its local runtime: ${message}\n`);
+  process.stderr.write(`Subtext could not start: ${message}\n`);
   process.exitCode = 1;
 }
 
 async function main(): Promise<void> {
+  const settingsStore = new ApplicationSettingsStore();
+  const settings = await settingsStore.load();
+  const credentials = new FileCredentialStore();
+  const models = builtinModels({ credentials });
+  const configuration = new ApplicationConfiguration(models, settingsStore, credentials);
+  const asrQuality = settings?.asrQuality ?? "balanced";
   const announcedDownloads = new Set<string>();
-  const runtime = await new RuntimeManager().prepare({
-    quality: "balanced",
+  const runtimeManager = new RuntimeManager();
+  const runtime = await runtimeManager.prepare({
+    quality: asrQuality,
     onProgress: (progress) => reportRuntimeProgress(progress, announcedDownloads),
   });
   const terminal = new ProcessTerminal();
@@ -38,15 +42,13 @@ async function main(): Promise<void> {
       executable: runtime.ytDlpExecutable,
       ffmpegDirectory: runtime.ffmpegDirectory,
     }),
-    new WhisperCppAsrAdapter({
-      executable: runtime.whisperExecutable,
-      modelPath: runtime.modelPath,
-      modelName: runtime.modelName,
-    }),
+    new ManagedAsrAdapter(runtimeManager, asrQuality, runtime),
     library,
   );
-  const processing = new VideoProcessor(acquisition, library, createSummarizer());
-  const app = new SubtextApp(tui, processing);
+  const processing = new VideoProcessor(acquisition, library, () =>
+    configuration.createSummarizer(),
+  );
+  const app = new SubtextApp(tui, processing, configuration);
   app.start();
 }
 
@@ -56,21 +58,4 @@ function reportRuntimeProgress(progress: RuntimeProgress, announced: Set<string>
   }
   announced.add(progress.packageId);
   process.stderr.write(`Preparing local runtime: downloading ${progress.packageId}…\n`);
-}
-
-function createSummarizer(): TranscriptSummarizer {
-  const provider = process.env.SUBTEXT_LLM_PROVIDER?.trim();
-  const modelId = process.env.SUBTEXT_LLM_MODEL?.trim();
-  if (provider === undefined || provider === "" || modelId === undefined || modelId === "") {
-    return new UnconfiguredTranscriptSummarizer();
-  }
-
-  const models = builtinModels();
-  const model = models.getModel(provider, modelId);
-  if (model === undefined) {
-    return new UnconfiguredTranscriptSummarizer(
-      `The configured Summary model ${provider}/${modelId} is not available.`,
-    );
-  }
-  return new PiAiTranscriptSummarizer(models, model);
 }

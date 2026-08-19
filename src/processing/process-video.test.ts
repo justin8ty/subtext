@@ -74,7 +74,7 @@ describe("VideoProcessor", () => {
     const acquisition = await completedAcquisition(library);
     const events: string[] = [];
     const summarizer = new ScriptedSummarizer([SUMMARY], () => events.push("summary"));
-    const processor = new VideoProcessor(acquisition, library, summarizer);
+    const processor = new VideoProcessor(acquisition, library, () => summarizer);
 
     const first = await processor.process(TRANSCRIPT.video.canonicalUrl, {
       onTranscript: () => events.push("transcript"),
@@ -120,7 +120,11 @@ describe("VideoProcessor", () => {
       });
     });
     const events: string[] = [];
-    const processor = new VideoProcessor(acquisition, library, new ScriptedSummarizer([SUMMARY]));
+    const processor = new VideoProcessor(
+      acquisition,
+      library,
+      () => new ScriptedSummarizer([SUMMARY]),
+    );
 
     await processor.process(TRANSCRIPT.video.canonicalUrl, {
       onTranscriptDraft: () => events.push("draft"),
@@ -130,11 +134,34 @@ describe("VideoProcessor", () => {
     expect(events).toEqual(["draft", "transcript"]);
   });
 
+  it("snapshots Summary Options when processing starts", async () => {
+    const library = new ArtifactLibrary(await temporaryLibrary());
+    const acquisition = await completedAcquisition(library);
+    const first = new ScriptedSummarizer([SUMMARY]);
+    const later = new ScriptedSummarizer([
+      new SummaryGenerationError("failed", "Later Options should not affect active work."),
+    ]);
+    let selected: TranscriptSummarizer = first;
+    const processor = new VideoProcessor(acquisition, library, () => selected);
+
+    const processing = processor.process(TRANSCRIPT.video.canonicalUrl);
+    selected = later;
+    const outcome = await processing;
+
+    expect(outcome.status).toBe("completed");
+    expect(first.calls).toBe(1);
+    expect(later.calls).toBe(0);
+  });
+
   it("retains an Unsummarized Transcript when Summary generation fails", async () => {
     const library = new ArtifactLibrary(await temporaryLibrary());
     const acquisition = await completedAcquisition(library);
     const failure = new SummaryGenerationError("failed", "Provider unavailable.");
-    const processor = new VideoProcessor(acquisition, library, new ScriptedSummarizer([failure]));
+    const processor = new VideoProcessor(
+      acquisition,
+      library,
+      () => new ScriptedSummarizer([failure]),
+    );
 
     const outcome = await processor.process(TRANSCRIPT.video.canonicalUrl);
 
@@ -154,7 +181,7 @@ describe("VideoProcessor", () => {
     const processor = new VideoProcessor(
       acquisition,
       library,
-      new CancellingSummarizer(controller),
+      () => new CancellingSummarizer(controller),
     );
 
     const outcome = await processor.process(TRANSCRIPT.video.canonicalUrl, {
@@ -176,7 +203,7 @@ describe("VideoProcessor", () => {
     const processor = new VideoProcessor(
       new FixedAcquisition(completedOutcome(storedTranscript)),
       library,
-      new ScriptedSummarizer([failure]),
+      () => new ScriptedSummarizer([failure]),
     );
 
     const outcome = await processor.summarize(VIDEO_ID, { regenerate: true });

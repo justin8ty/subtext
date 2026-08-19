@@ -9,6 +9,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AcquisitionOptions } from "../acquisition/acquire-transcript.js";
 import type {
+  ApplicationConfigurationAccess,
+  ConfigurationUpdate,
+} from "../config/application-configuration.js";
+import type { ApplicationSettings } from "../config/application-settings.js";
+import type {
   SummaryProcessingOptions,
   SummaryProcessingOutcome,
   VideoProcessingOptions,
@@ -138,6 +143,25 @@ describe("SubtextApp", () => {
     app.stop();
   });
 
+  it("snapshots the selected ASR quality when a Source Video is submitted", async () => {
+    const processing = new ImmediateProcessing({
+      status: "needs-input",
+      reason: "invalid-source-url",
+      message: "Fixture outcome.",
+    });
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(tui, processing, configuredApplication());
+    app.start();
+
+    typeText(terminal, SOURCE_URL);
+    terminal.send("\r");
+
+    await vi.waitFor(() => expect(processing.calls).toBe(1));
+    expect(processing.options?.asrQuality).toBe("accurate");
+    app.stop();
+  });
+
   it("prints the Transcript before Summary generation finishes", async () => {
     const processing = new DelayedSummaryProcessing();
     const terminal = new FakeTerminal();
@@ -227,6 +251,41 @@ describe("SubtextApp", () => {
     app.stop();
   });
 
+  it("runs first-use authentication and Options setup without rendering the API key", async () => {
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const configuration = new FirstRunConfiguration();
+    const app = new SubtextApp(
+      tui,
+      new ImmediateProcessing({
+        status: "needs-input",
+        reason: "invalid-source-url",
+        message: "Enter a URL.",
+      }),
+      configuration,
+    );
+    app.start();
+
+    expect(tui.hasOverlay()).toBe(true);
+    terminal.send("\r");
+    typeText(terminal, "fixture-secret-key");
+    expect(renderedText(app)).not.toContain("fixture-secret-key");
+    terminal.send("\r");
+    terminal.send("\r");
+    terminal.send("\r");
+    terminal.send("\r");
+
+    await vi.waitFor(() => expect(configuration.saved?.apiKey).toBe("fixture-secret-key"));
+    await vi.waitFor(() => expect(tui.hasOverlay()).toBe(false));
+    expect(configuration.current).toMatchObject({
+      summaryProvider: "deepseek",
+      summaryModel: "deepseek-v4-flash",
+      summaryDetail: "standard",
+      asrQuality: "balanced",
+    });
+    app.stop();
+  });
+
   it("opens the searchable palette and can quit through a filtered result", () => {
     const terminal = new FakeTerminal();
     const tui: TUI = new TuiMainScreen(terminal);
@@ -268,13 +327,18 @@ describe("SummaryView", () => {
 class ImmediateProcessing implements SourceVideoProcessing {
   readonly outcome: VideoProcessingOutcome;
   calls = 0;
+  options: VideoProcessingOptions | undefined;
 
   constructor(outcome: VideoProcessingOutcome) {
     this.outcome = outcome;
   }
 
-  async process(): Promise<VideoProcessingOutcome> {
+  async process(
+    _sourceUrl: string,
+    options: VideoProcessingOptions = {},
+  ): Promise<VideoProcessingOutcome> {
     this.calls += 1;
+    this.options = options;
     return this.outcome;
   }
 
@@ -468,4 +532,46 @@ function typeText(terminal: FakeTerminal, text: string): void {
 
 function renderedText(app: SubtextApp): string {
   return stripTerminalSequences(app.render(80).join("\n"));
+}
+
+class FirstRunConfiguration implements ApplicationConfigurationAccess {
+  current: ApplicationSettings | null = null;
+  saved: ConfigurationUpdate | undefined;
+
+  providers(): readonly { id: string; label: string }[] {
+    return [{ id: "deepseek", label: "DeepSeek" }];
+  }
+
+  models(): readonly { id: string; label: string; description: string }[] {
+    return [
+      {
+        id: "deepseek-v4-flash",
+        label: "deepseek-v4-flash",
+        description: "DeepSeek V4 Flash",
+      },
+    ];
+  }
+
+  async save(update: ConfigurationUpdate): Promise<ApplicationSettings> {
+    this.saved = update;
+    this.current = { schemaVersion: 1, ...update };
+    return this.current;
+  }
+}
+
+function configuredApplication(): ApplicationConfigurationAccess {
+  return {
+    current: {
+      schemaVersion: 1,
+      summaryProvider: "deepseek",
+      summaryModel: "deepseek-v4-flash",
+      summaryDetail: "standard",
+      asrQuality: "accurate",
+    },
+    providers: () => [],
+    models: () => [],
+    save: async () => {
+      throw new Error("Options save is not expected in this test.");
+    },
+  };
 }

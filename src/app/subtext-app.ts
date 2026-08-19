@@ -14,12 +14,17 @@ import {
 
 import type { TranscriptDraft } from "../acquisition/acquire-transcript.js";
 import type {
+  ApplicationConfigurationAccess,
+  ConfigurationUpdate,
+} from "../config/application-configuration.js";
+import type {
   SummaryProcessingOptions,
   SummaryProcessingOutcome,
   TranscriptReady,
   VideoProcessingOptions,
   VideoProcessingOutcome,
 } from "../processing/process-video.js";
+import { ConfigurationWizard } from "./configuration-wizard.js";
 import { HelpOverlay, Palette, type PaletteDestination } from "./palette.js";
 import { SummaryView } from "./summary-view.js";
 import { TranscriptDraftView } from "./transcript-draft-view.js";
@@ -29,6 +34,10 @@ export interface SourceVideoProcessing {
   process(sourceUrl: string, options?: VideoProcessingOptions): Promise<VideoProcessingOutcome>;
   summarize(videoId: string, options?: SummaryProcessingOptions): Promise<SummaryProcessingOutcome>;
 }
+
+type MutableVideoProcessingOptions = {
+  -readonly [Key in keyof VideoProcessingOptions]: VideoProcessingOptions[Key];
+};
 
 interface ActiveProcessing {
   readonly id: number;
@@ -55,6 +64,7 @@ const EDITOR_THEME: EditorTheme = {
 export class SubtextApp extends Container {
   private readonly tui: TUI;
   private readonly processing: SourceVideoProcessing;
+  private readonly configuration: ApplicationConfigurationAccess | undefined;
   private readonly history = new Container();
   private readonly status = new Text("Ready. Paste a YouTube URL and press Enter.", 0, 0);
   private readonly editor: Editor;
@@ -64,10 +74,15 @@ export class SubtextApp extends Container {
   private nextProcessingId = 1;
   private stopped = false;
 
-  constructor(tui: TUI, processing: SourceVideoProcessing) {
+  constructor(
+    tui: TUI,
+    processing: SourceVideoProcessing,
+    configuration?: ApplicationConfigurationAccess,
+  ) {
     super();
     this.tui = tui;
     this.processing = processing;
+    this.configuration = configuration;
     this.editor = new Editor(tui, EDITOR_THEME, { paddingX: 1, autocompleteMaxVisible: 4 });
     this.editor.onSubmit = (sourceUrl) => this.submit(sourceUrl);
 
@@ -88,6 +103,9 @@ export class SubtextApp extends Container {
     this.removeInputListener = this.tui.addInputListener((data) => this.handleGlobalInput(data));
     this.tui.setFocus(this.editor);
     this.tui.start();
+    if (this.configuration?.current === null) {
+      this.openConfiguration(true);
+    }
   }
 
   stop(): void {
@@ -172,11 +190,16 @@ export class SubtextApp extends Container {
   private async processVideo(sourceUrl: string, active: ActiveProcessing): Promise<void> {
     let outcome: VideoProcessingOutcome;
     try {
-      outcome = await this.processing.process(sourceUrl, {
+      const processingOptions: MutableVideoProcessingOptions = {
         signal: active.controller.signal,
         onTranscript: (ready) => this.renderReadyTranscript(ready, active),
         onTranscriptDraft: (draft) => this.renderTranscriptDraft(draft, active),
-      });
+      };
+      const asrQuality = this.configuration?.current?.asrQuality;
+      if (asrQuality !== undefined) {
+        processingOptions.asrQuality = asrQuality;
+      }
+      outcome = await this.processing.process(sourceUrl, processingOptions);
     } catch (error) {
       if (active.controller.signal.aborted) {
         outcome = { status: "cancelled", message: "Source Video processing was cancelled." };
@@ -424,7 +447,49 @@ export class SubtextApp extends Container {
       this.stop();
       return;
     }
+    if (destination === "options") {
+      this.openConfiguration(false);
+      return;
+    }
     this.openHelp();
+  }
+
+  private openConfiguration(required: boolean): void {
+    const configuration = this.configuration;
+    if (configuration === undefined) {
+      this.status.setText("Options are not available in this build.");
+      this.tui.requestRender();
+      return;
+    }
+
+    let handle: OverlayHandle;
+    const close = (): void => {
+      handle.hide();
+      this.restoreEditorFocus();
+      this.tui.requestRender();
+    };
+    const save = async (update: ConfigurationUpdate): Promise<void> => {
+      await configuration.save(update);
+      close();
+      if (this.activeProcessing === null) {
+        this.status.setText("Options saved. Ready for a YouTube URL.");
+      } else {
+        this.appendMessage("Options saved — changes apply to future work.");
+      }
+      this.tui.requestRender();
+    };
+    const wizard = new ConfigurationWizard(this.tui, configuration, {
+      required,
+      onSaved: save,
+      onCancel: close,
+    });
+    handle = this.tui.showOverlay(wizard, {
+      width: "80%",
+      minWidth: 42,
+      maxHeight: 16,
+      margin: 1,
+    });
+    this.tui.requestRender();
   }
 
   private openHelp(): void {

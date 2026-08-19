@@ -67,25 +67,28 @@ export interface TranscriptAcquisition {
   acquire(sourceUrl: string, options?: AcquisitionOptions): Promise<AcquisitionOutcome>;
 }
 
+export type TranscriptSummarizerFactory = () => TranscriptSummarizer;
+
 export class VideoProcessor {
   readonly acquisition: TranscriptAcquisition;
   readonly library: ArtifactLibrary;
-  readonly summarizer: TranscriptSummarizer;
+  private readonly summarizerFactory: TranscriptSummarizerFactory;
 
   constructor(
     acquisition: TranscriptAcquisition,
     library: ArtifactLibrary,
-    summarizer: TranscriptSummarizer,
+    summarizerFactory: TranscriptSummarizerFactory,
   ) {
     this.acquisition = acquisition;
     this.library = library;
-    this.summarizer = summarizer;
+    this.summarizerFactory = summarizerFactory;
   }
 
   async process(
     sourceUrl: string,
     options: VideoProcessingOptions = {},
   ): Promise<VideoProcessingOutcome> {
+    const summarizer = this.summarizerFactory();
     const acquisition = await this.acquisition.acquire(sourceUrl, options);
     if (acquisition.status !== "completed") {
       return acquisition;
@@ -126,10 +129,7 @@ export class VideoProcessor {
     }
 
     try {
-      const summaryMarkdown = await this.summarizer.summarize(
-        acquisition.transcript,
-        options.signal,
-      );
+      const summaryMarkdown = await summarizer.summarize(acquisition.transcript, options.signal);
       const storedSummary = await this.library.commitSummary(
         acquisition.transcript.video.id,
         acquisition.artifactRevision,
@@ -157,6 +157,7 @@ export class VideoProcessor {
     videoId: string,
     options: SummaryProcessingOptions = {},
   ): Promise<SummaryProcessingOutcome> {
+    const summarizer = this.summarizerFactory();
     try {
       if (signalIsAborted(options.signal)) {
         return { status: "cancelled", message: "Summary generation was cancelled." };
@@ -181,7 +182,7 @@ export class VideoProcessor {
         }
       }
 
-      const summaryMarkdown = await this.summarizer.summarize(
+      const summaryMarkdown = await summarizer.summarize(
         storedTranscript.transcript,
         options.signal,
       );

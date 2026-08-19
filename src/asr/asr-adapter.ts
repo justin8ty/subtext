@@ -1,3 +1,4 @@
+import type { AsrQuality } from "../runtime/runtime-manifest.js";
 import type { TranscriptSegment } from "../transcript/model.js";
 
 export interface AsrTranscript {
@@ -9,6 +10,7 @@ export interface AsrTranscript {
 export interface AsrTranscriptionOptions {
   readonly durationMs?: number;
   readonly languageCode?: string;
+  readonly quality?: AsrQuality;
   readonly signal?: AbortSignal;
   readonly onSegment?: (segment: TranscriptSegment) => void;
 }
