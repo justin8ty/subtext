@@ -59,3 +59,11 @@ _Avoid_: Cache, working files
 **Artifact Library**:
 The persistent collection of Video Artifacts available across Subtext sessions.
 _Avoid_: Cache directory, output folder
+
+**App Command**:
+A user-invoked application destination or action, such as Library, Options, Help, or Quit.
+_Avoid_: Palette item, menu option
+
+**Command Completion**:
+The inline, editor-coupled list of App Commands shown when the user types `/`. It narrows through fuzzy matching as more text is entered and remains part of the input flow rather than covering the existing interface.
+_Avoid_: Command Palette, popup, overlay

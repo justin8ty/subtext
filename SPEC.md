@@ -74,3 +74,58 @@ Delete downloaded audio and processing intermediates after success. Derived Mark
 - No speaker diarization or LLM rewriting of the canonical Transcript
 
 Public product naming and licensing remain deferred.
+
+## Improvements
+
+- When no Eligible Caption Track is available, immediately report that none was found and that Subtext is switching to ASR. Show this before Default Audio download and runtime preparation so the app does not appear stalled during the fallback.
+- Replace the overlay palette with Command Completion below the focused editor. Typing `/` lists App Commands without covering the existing interface; additional text fuzzy-filters command names, descriptions, and search aliases. For example, `/set` matches Options through its `settings` alias.
+- Add native Linux support, including managed runtime assets, process handling, external-open behavior, packaging, and platform-specific verification.
+
+### Highest-impact improvements
+
+1. **Clear visual hierarchy**
+   - Bold app and video titles
+   - Dim secondary metadata
+   - Cyan accent for timestamps and active controls
+   - Green/amber/red for success, warning, and failure
+
+2. **Visible processing stages**
+   ```text
+   ● Inspecting video
+   ✓ No eligible Caption Track found
+   → Switching to local ASR
+   ↓ Downloading Default Audio
+   ◌ Transcribing with Whisper
+   ```
+   Keep one active status line instead of appearing frozen.
+
+3. **Better Transcript presentation**
+   ```text
+   02:14  The transcript text starts here and wraps beneath
+          the text rather than beneath the timestamp.
+   ```
+   Dim timestamps, highlight hyperlinks, and separate metadata from content.
+
+4. **Render Summary Markdown**
+   - Styled headings instead of literal `##`
+   - Proper bullet indentation
+   - Bold and inline-code styling
+   - Subtle spacing between sections
+   - Preserve plain-text copying
+
+5. **Improve the URL editor**
+   - Visible border or accent while focused
+   - Placeholder text
+   - Short contextual hint beneath it
+   - Disable or visually mute it during processing
+
+6. **Polish overlays**
+   - Consistent bordered palette, Library, Options, and Help layouts
+   - Selected-row background/accent
+   - Better spacing and aligned descriptions
+   - Library badges such as `ASR`, `CAPTIONS`, and `SUMMARY`
+
+7. **Introduce a small design system**
+   - Central theme tokens for accent, muted, success, warning, error, borders, headings
+   - Reusable status, badge, section-header, and key-hint components
+   - Avoid styling independently inside every view
