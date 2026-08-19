@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
+import { mkdir, stat } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
 
+import { terminateProcessTree } from "../process/terminate-process-tree.js";
 import type {
   CaptionTrack,
   CaptionTrackOrigin,
@@ -8,7 +11,8 @@ import type {
 } from "./youtube-adapter.js";
 import { YoutubeAdapterError } from "./youtube-adapter.js";
 
-const MAX_METADATA_BYTES = 32 * 1024 * 1024;
+const MAX_PROCESS_OUTPUT_BYTES = 32 * 1024 * 1024;
+const DEFAULT_AUDIO_FORMAT = "bestaudio[format_note*=original]/bestaudio";
 
 interface YtDlpCaptionFormat {
   readonly ext?: string;
@@ -49,16 +53,26 @@ interface MutableInspectedSourceVideo {
 
 export class YtDlpYoutubeAdapter implements YoutubeAdapter {
   readonly executable: string;
+  readonly executableArguments: readonly string[];
 
-  constructor(executable = "yt-dlp") {
+  constructor(executable = "yt-dlp", executableArguments: readonly string[] = []) {
     this.executable = executable;
+    this.executableArguments = executableArguments;
   }
 
   async inspect(canonicalUrl: string, signal?: AbortSignal): Promise<InspectedSourceVideo> {
     const result = await runProcess(
       this.executable,
-      ["--dump-single-json", "--skip-download", "--no-playlist", "--no-warnings", canonicalUrl],
+      [
+        ...this.executableArguments,
+        "--dump-single-json",
+        "--skip-download",
+        "--no-playlist",
+        "--no-warnings",
+        canonicalUrl,
+      ],
       signal,
+      "Source Video inspection was cancelled.",
     );
 
     let metadata: YtDlpMetadata;
@@ -134,6 +148,55 @@ export class YtDlpYoutubeAdapter implements YoutubeAdapter {
 
     return response.text();
   }
+
+  async downloadDefaultAudio(
+    canonicalUrl: string,
+    destinationPath: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const extension = extname(destinationPath).toLowerCase();
+    if (extension !== ".wav") {
+      throw new YoutubeAdapterError("failed", "Default Audio destination must be a WAV file.");
+    }
+
+    const destinationDirectory = dirname(destinationPath);
+    const temporaryDirectory = join(destinationDirectory, "yt-dlp");
+    await mkdir(temporaryDirectory, { recursive: true, mode: 0o700 });
+    const outputTemplate = `${destinationPath.slice(0, -extension.length)}.%(ext)s`;
+    await runProcess(
+      this.executable,
+      [
+        ...this.executableArguments,
+        "--no-playlist",
+        "--no-audio-multistreams",
+        "--no-progress",
+        "--no-warnings",
+        "--format",
+        DEFAULT_AUDIO_FORMAT,
+        "--extract-audio",
+        "--audio-format",
+        "wav",
+        "--paths",
+        `temp:${temporaryDirectory}`,
+        "--output",
+        outputTemplate,
+        canonicalUrl,
+      ],
+      signal,
+      "Default Audio download was cancelled.",
+    );
+
+    try {
+      const audio = await stat(destinationPath);
+      if (!audio.isFile() || audio.size === 0) {
+        throw new Error("empty output");
+      }
+    } catch (error) {
+      throw new YoutubeAdapterError("unavailable", "yt-dlp did not produce usable Default Audio.", {
+        cause: error,
+      });
+    }
+  }
 }
 
 function decodeCaptionTracks(
@@ -175,6 +238,8 @@ function addOptionalMetadata(
   }
   if (metadata.live_status !== undefined) {
     video.liveStatus = metadata.live_status;
+  } else if (metadata.is_live === true) {
+    video.liveStatus = "is_live";
   }
   if (metadata.availability !== undefined) {
     video.availability = metadata.availability;
@@ -185,12 +250,11 @@ function addOptionalMetadata(
 function runProcess(
   executable: string,
   arguments_: readonly string[],
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  cancellationMessage: string,
 ): Promise<ProcessResult> {
   if (signal?.aborted === true) {
-    return Promise.reject(
-      new YoutubeAdapterError("cancelled", "Source Video inspection was cancelled."),
-    );
+    return Promise.reject(new YoutubeAdapterError("cancelled", cancellationMessage));
   }
 
   return new Promise((resolve, reject) => {
@@ -203,21 +267,33 @@ function runProcess(
     const stderr: Buffer[] = [];
     let outputBytes = 0;
     let completed = false;
+    let termination: Promise<void> | null = null;
 
+    const terminate = (): Promise<void> => {
+      termination ??= terminateProcessTree(child);
+      return termination;
+    };
     const abort = (): void => {
-      child.kill();
+      void terminate();
     };
     signal?.addEventListener("abort", abort, { once: true });
 
     child.stdout.on("data", (chunk: Buffer) => {
       outputBytes += chunk.length;
-      if (outputBytes > MAX_METADATA_BYTES) {
-        child.kill();
+      if (outputBytes > MAX_PROCESS_OUTPUT_BYTES) {
+        void terminate();
         return;
       }
       stdout.push(chunk);
     });
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => {
+      outputBytes += chunk.length;
+      if (outputBytes > MAX_PROCESS_OUTPUT_BYTES) {
+        void terminate();
+        return;
+      }
+      stderr.push(chunk);
+    });
 
     child.on("error", (error) => {
       if (completed) {
@@ -228,22 +304,25 @@ function runProcess(
       reject(new YoutubeAdapterError("failed", `Could not start ${executable}.`, { cause: error }));
     });
 
-    child.on("close", (exitCode) => {
+    child.on("close", async (exitCode) => {
       if (completed) {
         return;
       }
       completed = true;
       signal?.removeEventListener("abort", abort);
+      if (termination !== null) {
+        await termination;
+      }
 
       if (signal?.aborted === true) {
-        reject(new YoutubeAdapterError("cancelled", "Source Video inspection was cancelled."));
+        reject(new YoutubeAdapterError("cancelled", cancellationMessage));
         return;
       }
-      if (outputBytes > MAX_METADATA_BYTES) {
+      if (outputBytes > MAX_PROCESS_OUTPUT_BYTES) {
         reject(
           new YoutubeAdapterError(
             "failed",
-            "yt-dlp returned more metadata than Subtext can safely process.",
+            "yt-dlp produced more process output than Subtext can safely process.",
           ),
         );
         return;
@@ -278,7 +357,8 @@ function classifyProcessFailure(stderr: string, exitCode: number | null): Youtub
     lowerDiagnostic.includes("private video") ||
     lowerDiagnostic.includes("video unavailable") ||
     lowerDiagnostic.includes("removed") ||
-    lowerDiagnostic.includes("members-only")
+    lowerDiagnostic.includes("members-only") ||
+    lowerDiagnostic.includes("requested format is not available")
   ) {
     return new YoutubeAdapterError("unavailable", diagnostic || "The Source Video is unavailable.");
   }

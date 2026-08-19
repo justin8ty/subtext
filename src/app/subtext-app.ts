@@ -12,6 +12,7 @@ import {
   type TuiInputListenerResult,
 } from "@earendil-works/pi-tui";
 
+import type { TranscriptDraft } from "../acquisition/acquire-transcript.js";
 import type {
   SummaryProcessingOptions,
   SummaryProcessingOutcome,
@@ -21,6 +22,7 @@ import type {
 } from "../processing/process-video.js";
 import { HelpOverlay, Palette, type PaletteDestination } from "./palette.js";
 import { SummaryView } from "./summary-view.js";
+import { TranscriptDraftView } from "./transcript-draft-view.js";
 import { TranscriptView } from "./transcript-view.js";
 
 export interface SourceVideoProcessing {
@@ -34,6 +36,7 @@ interface ActiveProcessing {
   readonly controller: AbortController;
   cancellationRequested: boolean;
   transcriptRendered: boolean;
+  transcriptDraftView: TranscriptDraftView | null;
 }
 
 const PLAIN_SELECT_THEME: SelectListTheme = {
@@ -172,6 +175,7 @@ export class SubtextApp extends Container {
       outcome = await this.processing.process(sourceUrl, {
         signal: active.controller.signal,
         onTranscript: (ready) => this.renderReadyTranscript(ready, active),
+        onTranscriptDraft: (draft) => this.renderTranscriptDraft(draft, active),
       });
     } catch (error) {
       if (active.controller.signal.aborted) {
@@ -194,13 +198,38 @@ export class SubtextApp extends Container {
     this.tui.requestRender();
   }
 
+  private renderTranscriptDraft(draft: TranscriptDraft, active: ActiveProcessing): void {
+    if (
+      this.stopped ||
+      this.activeProcessing?.id !== active.id ||
+      active.cancellationRequested ||
+      active.transcriptRendered
+    ) {
+      return;
+    }
+    if (active.transcriptDraftView === null) {
+      active.transcriptDraftView = new TranscriptDraftView(draft.video);
+      this.appendComponent(active.transcriptDraftView);
+      this.status.setText("Transcribing Default Audio locally… Esc cancels.");
+    }
+    if (active.transcriptDraftView.video.id !== draft.video.id) {
+      return;
+    }
+    active.transcriptDraftView.append(draft.segment);
+    this.tui.requestRender();
+  }
+
   private renderReadyTranscript(ready: TranscriptReady, active: ActiveProcessing): void {
     if (this.stopped || this.activeProcessing?.id !== active.id || active.transcriptRendered) {
       return;
     }
     active.transcriptRendered = true;
     this.latestTranscriptVideoId = ready.transcript.video.id;
-    this.appendComponent(new TranscriptView(ready.transcript));
+    if (active.transcriptDraftView === null) {
+      this.appendComponent(new TranscriptView(ready.transcript));
+    } else {
+      active.transcriptDraftView.complete(ready.transcript);
+    }
     this.status.setText(
       ready.reused
         ? "Loaded the existing Transcript. Generating its Summary…"
@@ -337,6 +366,7 @@ export class SubtextApp extends Container {
       controller: new AbortController(),
       cancellationRequested: false,
       transcriptRendered: false,
+      transcriptDraftView: null,
     };
     this.nextProcessingId += 1;
     this.activeProcessing = active;
@@ -416,7 +446,9 @@ export class SubtextApp extends Container {
     this.appendComponent(new Text(message, 0, 0));
   }
 
-  private appendComponent(component: Text | TranscriptView | SummaryView): void {
+  private appendComponent(
+    component: Text | TranscriptView | TranscriptDraftView | SummaryView,
+  ): void {
     if (this.history.children.length > 0) {
       this.history.addChild(new Spacer(1));
     }

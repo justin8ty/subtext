@@ -34,4 +34,9 @@ export class YoutubeAdapterError extends Error {
 export interface YoutubeAdapter {
   inspect(canonicalUrl: string, signal?: AbortSignal): Promise<InspectedSourceVideo>;
   downloadCaption(track: CaptionTrack, signal?: AbortSignal): Promise<string>;
+  downloadDefaultAudio(
+    canonicalUrl: string,
+    destinationPath: string,
+    signal?: AbortSignal,
+  ): Promise<void>;
 }

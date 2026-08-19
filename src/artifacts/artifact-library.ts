@@ -112,42 +112,15 @@ export class ArtifactLibrary {
     if (rawCaption.trim() === "") {
       throw new ArtifactLibraryError("An empty Caption Track cannot be committed.");
     }
+    return this.commitTranscriptRevision(transcript, rawCaption);
+  }
 
-    const videoDirectory = this.videoDirectory(transcript.video.id);
-    const revisionsDirectory = join(videoDirectory, "revisions");
-    const previousRevision = await readCurrentRevision(videoDirectory);
-    const revision = `${Date.now()}-${randomUUID()}`;
-    const artifactDirectory = join(revisionsDirectory, revision);
-    await mkdir(artifactDirectory, { recursive: true, mode: 0o700 });
-
-    try {
-      await writeFile(join(artifactDirectory, CAPTION_TRACK_ARTIFACT_FILENAME), rawCaption, {
-        encoding: "utf8",
-        mode: 0o600,
-      });
-      await writeFile(
-        join(artifactDirectory, TRANSCRIPT_FILENAME),
-        `${JSON.stringify(transcript, null, 2)}\n`,
-        {
-          encoding: "utf8",
-          mode: 0o600,
-        },
-      );
-      await switchCurrentRevision(videoDirectory, revision);
-    } catch (error) {
-      await rm(artifactDirectory, { recursive: true, force: true }).catch(() => undefined);
-      throw new ArtifactLibraryError(
-        `Could not commit Video Artifacts for ${transcript.video.id}.`,
-        { cause: error },
-      );
+  async commitAsrTranscript(transcript: Transcript): Promise<StoredTranscript> {
+    validateTranscript(transcript, transcript.video.id);
+    if (transcript.provenance.origin !== "asr") {
+      throw new ArtifactLibraryError("An ASR commit requires ASR provenance.");
     }
-
-    if (previousRevision !== null && previousRevision !== revision) {
-      await rm(join(revisionsDirectory, previousRevision), { recursive: true, force: true }).catch(
-        () => undefined,
-      );
-    }
-    return { transcript, artifactDirectory, revision };
+    return this.commitTranscriptRevision(transcript);
   }
 
   async commitSummary(
@@ -188,6 +161,46 @@ export class ArtifactLibrary {
     }
 
     return { markdown: `${markdown.trimEnd()}\n`, artifactDirectory, revision: expectedRevision };
+  }
+
+  private async commitTranscriptRevision(
+    transcript: Transcript,
+    rawCaption?: string,
+  ): Promise<StoredTranscript> {
+    const videoDirectory = this.videoDirectory(transcript.video.id);
+    const revisionsDirectory = join(videoDirectory, "revisions");
+    const previousRevision = await readCurrentRevision(videoDirectory);
+    const revision = `${Date.now()}-${randomUUID()}`;
+    const artifactDirectory = join(revisionsDirectory, revision);
+    await mkdir(artifactDirectory, { recursive: true, mode: 0o700 });
+
+    try {
+      if (rawCaption !== undefined) {
+        await writeFile(join(artifactDirectory, CAPTION_TRACK_ARTIFACT_FILENAME), rawCaption, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+      }
+      await writeFile(
+        join(artifactDirectory, TRANSCRIPT_FILENAME),
+        `${JSON.stringify(transcript, null, 2)}\n`,
+        { encoding: "utf8", mode: 0o600 },
+      );
+      await switchCurrentRevision(videoDirectory, revision);
+    } catch (error) {
+      await rm(artifactDirectory, { recursive: true, force: true }).catch(() => undefined);
+      throw new ArtifactLibraryError(
+        `Could not commit Video Artifacts for ${transcript.video.id}.`,
+        { cause: error },
+      );
+    }
+
+    if (previousRevision !== null && previousRevision !== revision) {
+      await rm(join(revisionsDirectory, previousRevision), { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    }
+    return { transcript, artifactDirectory, revision };
   }
 
   private videoDirectory(videoId: string): string {
@@ -246,8 +259,22 @@ function validateTranscript(transcript: Transcript, expectedVideoId: string): vo
   if (
     transcript.schemaVersion !== TRANSCRIPT_SCHEMA_VERSION ||
     transcript.video.id !== expectedVideoId ||
+    !Number.isFinite(transcript.video.durationMs) ||
+    transcript.video.durationMs <= 0 ||
     !Array.isArray(transcript.segments) ||
-    transcript.segments.length === 0
+    transcript.segments.length === 0 ||
+    transcript.segments.some((segment, index, segments) => {
+      const previous = segments[index - 1];
+      return (
+        !Number.isFinite(segment.startMs) ||
+        !Number.isFinite(segment.endMs) ||
+        segment.startMs < 0 ||
+        segment.endMs <= segment.startMs ||
+        segment.endMs > transcript.video.durationMs ||
+        segment.text.trim() === "" ||
+        (previous !== undefined && segment.startMs < previous.endMs)
+      );
+    })
   ) {
     throw new ArtifactLibraryError("The canonical Transcript is invalid.");
   }

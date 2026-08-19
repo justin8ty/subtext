@@ -31,7 +31,7 @@ export class TranscriptView implements Component {
     return [
       ...fittedHeader,
       ...this.transcript.segments.flatMap((segment) =>
-        renderSegment(segment, this.transcript, width),
+        renderTimestampedSegment(segment, this.transcript.video.canonicalUrl, width),
       ),
     ];
   }
@@ -39,18 +39,15 @@ export class TranscriptView implements Component {
   invalidate(): void {}
 }
 
-function renderSegment(
+export function renderTimestampedSegment(
   segment: TranscriptSegment,
-  transcript: Transcript,
+  canonicalUrl: string,
   width: number,
 ): string[] {
   const timestamp = formatTimestamp(segment.startMs);
   const seconds = Math.floor(segment.startMs / 1_000);
-  const separator = transcript.video.canonicalUrl.includes("?") ? "&" : "?";
-  const linkedTimestamp = hyperlink(
-    timestamp,
-    `${transcript.video.canonicalUrl}${separator}t=${seconds}s`,
-  );
+  const separator = canonicalUrl.includes("?") ? "&" : "?";
+  const linkedTimestamp = hyperlink(timestamp, `${canonicalUrl}${separator}t=${seconds}s`);
   const prefixWidth = visibleWidth(timestamp) + 1;
 
   if (width <= prefixWidth) {
@@ -67,7 +64,7 @@ function renderSegment(
   ];
 }
 
-function formatTimestamp(startMs: number): string {
+export function formatTimestamp(startMs: number): string {
   const totalSeconds = Math.max(0, Math.floor(startMs / 1_000));
   const hours = Math.floor(totalSeconds / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);

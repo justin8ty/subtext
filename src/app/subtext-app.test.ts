@@ -96,6 +96,48 @@ describe("SubtextApp", () => {
     app.stop();
   });
 
+  it("streams an ASR Transcript Draft and replaces it with the canonical Transcript", async () => {
+    const processing = new DelayedAsrProcessing();
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(tui, processing);
+    app.start();
+
+    typeText(terminal, SOURCE_URL);
+    terminal.send("\r");
+
+    await vi.waitFor(() =>
+      expect(renderedText(app)).toContain("Transcript Draft · ASR · incomplete"),
+    );
+    expect(renderedText(app)).toContain("The opening idea.");
+    expect(renderedText(app)).not.toContain("## Overview");
+
+    processing.complete();
+
+    await vi.waitFor(() => expect(renderedText(app)).toContain("## Overview"));
+    expect(renderedText(app)).not.toContain("Transcript Draft · ASR · incomplete");
+    expect(renderedText(app).match(/The opening idea\./gu)).toHaveLength(1);
+    app.stop();
+  });
+
+  it("keeps a streamed Transcript Draft with an explicit marker after ASR cancellation", async () => {
+    const processing = new CancelledAsrProcessing();
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(tui, processing);
+    app.start();
+
+    typeText(terminal, SOURCE_URL);
+    terminal.send("\r");
+
+    await vi.waitFor(() =>
+      expect(renderedText(app)).toContain("Incomplete — ASR transcription was cancelled."),
+    );
+    expect(renderedText(app)).toContain("Transcript Draft · ASR · incomplete");
+    expect(renderedText(app)).toContain("The opening idea.");
+    app.stop();
+  });
+
   it("prints the Transcript before Summary generation finishes", async () => {
     const processing = new DelayedSummaryProcessing();
     const terminal = new FakeTerminal();
@@ -234,6 +276,62 @@ class ImmediateProcessing implements SourceVideoProcessing {
   async process(): Promise<VideoProcessingOutcome> {
     this.calls += 1;
     return this.outcome;
+  }
+
+  async summarize(): Promise<SummaryProcessingOutcome> {
+    return { status: "unavailable", message: "No Transcript." };
+  }
+}
+
+class DelayedAsrProcessing implements SourceVideoProcessing {
+  private finish: ((outcome: VideoProcessingOutcome) => void) | null = null;
+  private options: VideoProcessingOptions | null = null;
+
+  process(
+    _sourceUrl: string,
+    options: VideoProcessingOptions = {},
+  ): Promise<VideoProcessingOutcome> {
+    this.options = options;
+    options.onTranscriptDraft?.({
+      video: TRANSCRIPT.video,
+      segment: TRANSCRIPT.segments[0]!,
+    });
+    return new Promise((resolve) => {
+      this.finish = resolve;
+    });
+  }
+
+  async summarize(): Promise<SummaryProcessingOutcome> {
+    return { status: "unavailable", message: "No Transcript." };
+  }
+
+  complete(): void {
+    this.options?.onTranscript?.({
+      transcript: TRANSCRIPT,
+      artifactDirectory: "/tmp/subtext-artifacts",
+      reused: false,
+    });
+    this.finish?.({
+      status: "completed",
+      transcript: TRANSCRIPT,
+      summaryMarkdown: SUMMARY_MARKDOWN,
+      artifactDirectory: "/tmp/subtext-artifacts",
+      reusedTranscript: false,
+      reusedSummary: false,
+    });
+  }
+}
+
+class CancelledAsrProcessing implements SourceVideoProcessing {
+  async process(
+    _sourceUrl: string,
+    options: VideoProcessingOptions = {},
+  ): Promise<VideoProcessingOutcome> {
+    options.onTranscriptDraft?.({
+      video: TRANSCRIPT.video,
+      segment: TRANSCRIPT.segments[0]!,
+    });
+    return { status: "cancelled", message: "ASR transcription was cancelled." };
   }
 
   async summarize(): Promise<SummaryProcessingOutcome> {

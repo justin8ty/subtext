@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { AcquisitionOutcome } from "../acquisition/acquire-transcript.js";
+import type { AcquisitionOptions, AcquisitionOutcome } from "../acquisition/acquire-transcript.js";
 import { ArtifactLibrary } from "../artifacts/artifact-library.js";
 import {
   SummaryGenerationError,
@@ -102,6 +102,34 @@ describe("VideoProcessor", () => {
     expect(summarizer.calls).toBe(1);
   });
 
+  it("forwards streamed Transcript Draft segments before the completed Transcript", async () => {
+    const library = new ArtifactLibrary(await temporaryLibrary());
+    const storedTranscript = await library.commitAsrTranscript({
+      ...TRANSCRIPT,
+      provenance: {
+        origin: "asr",
+        languageCode: "en",
+        model: "fixture-model",
+        normalization: ["whitespace-normalization", "timing-repair"],
+      },
+    });
+    const acquisition = new FixedAcquisition(completedOutcome(storedTranscript), (options) => {
+      options.onTranscriptDraft?.({
+        video: TRANSCRIPT.video,
+        segment: TRANSCRIPT.segments[0]!,
+      });
+    });
+    const events: string[] = [];
+    const processor = new VideoProcessor(acquisition, library, new ScriptedSummarizer([SUMMARY]));
+
+    await processor.process(TRANSCRIPT.video.canonicalUrl, {
+      onTranscriptDraft: () => events.push("draft"),
+      onTranscript: () => events.push("transcript"),
+    });
+
+    expect(events).toEqual(["draft", "transcript"]);
+  });
+
   it("retains an Unsummarized Transcript when Summary generation fails", async () => {
     const library = new ArtifactLibrary(await temporaryLibrary());
     const acquisition = await completedAcquisition(library);
@@ -160,12 +188,15 @@ describe("VideoProcessor", () => {
 
 class FixedAcquisition implements TranscriptAcquisition {
   readonly outcome: AcquisitionOutcome;
+  readonly onAcquire: ((options: AcquisitionOptions) => void) | undefined;
 
-  constructor(outcome: AcquisitionOutcome) {
+  constructor(outcome: AcquisitionOutcome, onAcquire?: (options: AcquisitionOptions) => void) {
     this.outcome = outcome;
+    this.onAcquire = onAcquire;
   }
 
-  async acquire(): Promise<AcquisitionOutcome> {
+  async acquire(_sourceUrl: string, options: AcquisitionOptions = {}): Promise<AcquisitionOutcome> {
+    this.onAcquire?.(options);
     return this.outcome;
   }
 }

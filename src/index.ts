@@ -9,7 +9,16 @@ export {
   TranscriptAcquirer,
   type AcquisitionOptions,
   type AcquisitionOutcome,
+  type TranscriptDraft,
 } from "./acquisition/acquire-transcript.js";
+export {
+  AsrAdapterError,
+  type AsrAdapter,
+  type AsrAdapterErrorKind,
+  type AsrTranscript,
+  type AsrTranscriptionOptions,
+} from "./asr/asr-adapter.js";
+export { WhisperCppAsrAdapter } from "./asr/whisper-cpp-adapter.js";
 export {
   VideoProcessor,
   type SummaryProcessingOptions,
@@ -30,6 +39,7 @@ export {
 export {
   CAPTION_TRACK_ARTIFACT_FILENAME,
   TRANSCRIPT_SCHEMA_VERSION,
+  type AsrProvenance,
   type CaptionProvenance,
   type SourceVideoRecord,
   type Transcript,

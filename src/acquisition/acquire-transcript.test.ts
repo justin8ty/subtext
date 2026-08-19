@@ -1,9 +1,15 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import {
+  AsrAdapterError,
+  type AsrAdapter,
+  type AsrTranscript,
+  type AsrTranscriptionOptions,
+} from "../asr/asr-adapter.js";
 import { ArtifactLibrary } from "../artifacts/artifact-library.js";
 import { parseYoutubeUrl } from "../source-video/youtube-url.js";
 import { normalizeJson3Caption } from "../transcript/normalize-json3.js";
@@ -41,7 +47,7 @@ describe("TranscriptAcquirer", () => {
       RAW_CAPTION,
     );
     const library = new ArtifactLibrary(await temporaryLibrary());
-    const acquirer = new TranscriptAcquirer(youtube, library);
+    const acquirer = new TranscriptAcquirer(youtube, new UnusedAsrAdapter(), library);
 
     const first = await acquirer.acquire(`https://youtu.be/${VIDEO_ID}`);
     expect(first.status).toBe("completed");
@@ -75,9 +81,11 @@ describe("TranscriptAcquirer", () => {
       sourceVideo([captionTrack("creator-caption", "creator")]),
       RAW_CAPTION,
     );
-    const first = await new TranscriptAcquirer(firstYoutube, library).acquire(
-      `https://www.youtube.com/watch?v=${VIDEO_ID}`,
-    );
+    const first = await new TranscriptAcquirer(
+      firstYoutube,
+      new UnusedAsrAdapter(),
+      library,
+    ).acquire(`https://www.youtube.com/watch?v=${VIDEO_ID}`);
     expect(first.status).toBe("completed");
     if (first.status !== "completed") {
       return;
@@ -93,10 +101,11 @@ describe("TranscriptAcquirer", () => {
       sourceVideo([captionTrack("creator-caption", "creator")]),
       refreshedCaption,
     );
-    const refreshed = await new TranscriptAcquirer(refreshYoutube, library).acquire(
-      `https://youtu.be/${VIDEO_ID}`,
-      { refresh: true },
-    );
+    const refreshed = await new TranscriptAcquirer(
+      refreshYoutube,
+      new UnusedAsrAdapter(),
+      library,
+    ).acquire(`https://youtu.be/${VIDEO_ID}`, { refresh: true });
 
     expect(refreshed.status).toBe("completed");
     if (refreshed.status === "completed") {
@@ -120,7 +129,7 @@ describe("TranscriptAcquirer", () => {
       "{not-json",
     );
     const library = new ArtifactLibrary(await temporaryLibrary());
-    const acquirer = new TranscriptAcquirer(youtube, library);
+    const acquirer = new TranscriptAcquirer(youtube, new UnusedAsrAdapter(), library);
 
     const outcome = await acquirer.acquire(`https://www.youtube.com/watch?v=${VIDEO_ID}`);
 
@@ -137,7 +146,7 @@ describe("TranscriptAcquirer", () => {
       shortCaption,
     );
     const library = new ArtifactLibrary(await temporaryLibrary());
-    const acquirer = new TranscriptAcquirer(youtube, library);
+    const acquirer = new TranscriptAcquirer(youtube, new UnusedAsrAdapter(), library);
 
     const outcome = await acquirer.acquire(`https://www.youtube.com/watch?v=${VIDEO_ID}`);
 
@@ -145,9 +154,74 @@ describe("TranscriptAcquirer", () => {
     await expect(library.findTranscript(VIDEO_ID)).resolves.toBeNull();
   });
 
+  it("falls back to Default Audio, streams an ASR draft, and commits only the Transcript", async () => {
+    const library = new ArtifactLibrary(await temporaryLibrary());
+    const workspaceRoot = await temporaryLibrary();
+    const youtube = new FakeAsrYoutubeAdapter(sourceVideoWithoutLanguage());
+    const segments = [
+      { startMs: 0, endMs: 5_000, text: "ASR opening" },
+      { startMs: 5_000, endMs: 10_000, text: "ASR ending" },
+    ];
+    const asr = new ScriptedAsrAdapter({ languageCode: "es", model: "large-v3-turbo", segments });
+    const drafts: string[] = [];
+    const acquirer = new TranscriptAcquirer(youtube, asr, library, workspaceRoot);
+
+    const outcome = await acquirer.acquire(`https://www.youtube.com/watch?v=${VIDEO_ID}`, {
+      onTranscriptDraft: (draft) => drafts.push(draft.segment.text),
+    });
+
+    expect(outcome).toMatchObject({
+      status: "completed",
+      reused: false,
+      transcript: {
+        languageCode: "es",
+        provenance: { origin: "asr", languageCode: "es", model: "large-v3-turbo" },
+      },
+    });
+    expect(drafts).toEqual(["ASR opening", "ASR ending"]);
+    expect(asr.receivedLanguageCode).toBeUndefined();
+    expect(asr.receivedDurationMs).toBe(10_000);
+    expect(youtube.downloadedAudioPath).toMatch(/default-audio\.wav$/u);
+    expect(await readdir(workspaceRoot)).toEqual([]);
+    if (outcome.status === "completed") {
+      await expect(
+        readFile(join(outcome.artifactDirectory, "caption-track.json3"), "utf8"),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(
+        readFile(join(outcome.artifactDirectory, "transcript.json"), "utf8"),
+      ).resolves.toContain('"origin": "asr"');
+    }
+  });
+
+  it("retains streamed draft output but no artifact when ASR is cancelled", async () => {
+    const library = new ArtifactLibrary(await temporaryLibrary());
+    const workspaceRoot = await temporaryLibrary();
+    const youtube = new FakeAsrYoutubeAdapter(sourceVideo([]));
+    const draftSegment = { startMs: 0, endMs: 3_000, text: "Incomplete draft" };
+    const asr = new ScriptedAsrAdapter(
+      new AsrAdapterError("cancelled", "ASR transcription was cancelled."),
+      [draftSegment],
+    );
+    const drafts: string[] = [];
+    const acquirer = new TranscriptAcquirer(youtube, asr, library, workspaceRoot);
+
+    const outcome = await acquirer.acquire(`https://youtu.be/${VIDEO_ID}`, {
+      onTranscriptDraft: (draft) => drafts.push(draft.segment.text),
+    });
+
+    expect(outcome).toMatchObject({ status: "cancelled" });
+    expect(drafts).toEqual(["Incomplete draft"]);
+    await expect(library.findTranscript(VIDEO_ID)).resolves.toBeNull();
+    expect(await readdir(workspaceRoot)).toEqual([]);
+  });
+
   it("returns needs-input without invoking YouTube for an invalid URL", async () => {
     const youtube = new FakeYoutubeAdapter(sourceVideo([]), RAW_CAPTION);
-    const acquirer = new TranscriptAcquirer(youtube, new ArtifactLibrary(await temporaryLibrary()));
+    const acquirer = new TranscriptAcquirer(
+      youtube,
+      new UnusedAsrAdapter(),
+      new ArtifactLibrary(await temporaryLibrary()),
+    );
 
     const outcome = await acquirer.acquire("https://example.com/watch?v=dQw4w9WgXcQ");
 
@@ -222,6 +296,70 @@ class FakeYoutubeAdapter implements YoutubeAdapter {
     this.downloadedTrack = track;
     return this.rawCaption;
   }
+
+  async downloadDefaultAudio(): Promise<void> {
+    throw new Error("Default Audio was not expected in this test.");
+  }
+}
+
+class UnusedAsrAdapter implements AsrAdapter {
+  async transcribe(): Promise<AsrTranscript> {
+    throw new Error("ASR was not expected in this test.");
+  }
+}
+
+class ScriptedAsrAdapter implements AsrAdapter {
+  readonly result: AsrTranscript | Error;
+  readonly draftSegments: readonly AsrTranscript["segments"][number][];
+  receivedDurationMs: number | undefined;
+  receivedLanguageCode: string | undefined;
+
+  constructor(
+    result: AsrTranscript | Error,
+    draftSegments: readonly AsrTranscript["segments"][number][] = result instanceof Error
+      ? []
+      : result.segments,
+  ) {
+    this.result = result;
+    this.draftSegments = draftSegments;
+  }
+
+  async transcribe(
+    _audioPath: string,
+    options: AsrTranscriptionOptions = {},
+  ): Promise<AsrTranscript> {
+    this.receivedDurationMs = options.durationMs;
+    this.receivedLanguageCode = options.languageCode;
+    for (const segment of this.draftSegments) {
+      options.onSegment?.(segment);
+    }
+    if (this.result instanceof Error) {
+      throw this.result;
+    }
+    return this.result;
+  }
+}
+
+class FakeAsrYoutubeAdapter implements YoutubeAdapter {
+  readonly video: InspectedSourceVideo;
+  downloadedAudioPath: string | undefined;
+
+  constructor(video: InspectedSourceVideo) {
+    this.video = video;
+  }
+
+  async inspect(): Promise<InspectedSourceVideo> {
+    return this.video;
+  }
+
+  async downloadCaption(): Promise<string> {
+    throw new Error("A Caption Track was not expected in this test.");
+  }
+
+  async downloadDefaultAudio(_canonicalUrl: string, destinationPath: string): Promise<void> {
+    this.downloadedAudioPath = destinationPath;
+    await writeFile(destinationPath, "fixture audio");
+  }
 }
 
 function sourceVideo(captionTracks: readonly CaptionTrack[]): InspectedSourceVideo {
@@ -234,6 +372,18 @@ function sourceVideo(captionTracks: readonly CaptionTrack[]): InspectedSourceVid
     liveStatus: "not_live",
     availability: "public",
     captionTracks,
+  };
+}
+
+function sourceVideoWithoutLanguage(): InspectedSourceVideo {
+  return {
+    id: VIDEO_ID,
+    title: "Fixture video",
+    canonicalUrl: `https://www.youtube.com/watch?v=${VIDEO_ID}`,
+    durationMs: 10_000,
+    liveStatus: "not_live",
+    availability: "public",
+    captionTracks: [],
   };
 }
 
