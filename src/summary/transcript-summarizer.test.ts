@@ -9,29 +9,13 @@ import { describe, expect, it } from "vitest";
 import { TRANSCRIPT_SCHEMA_VERSION, type Transcript } from "../transcript/model.js";
 import { PiAiTranscriptSummarizer, SummaryGenerationError } from "./transcript-summarizer.js";
 
-const SUMMARY = `# Summary
+const SUMMARY = `# Key ideas
 
-## Overview
-The speaker introduces a testable idea [00:00].
-
-## Chapters
-- [00:00] Introduction
-
-## Claims
-- The idea can be tested [00:00].
-
-## Examples
-- A fixture is used [00:05].
-
-## Caveats
-- None stated.
-
-## Takeaways
-- Test the idea [00:05].
+The speaker introduces a testable idea and demonstrates it with a fixture.
 `;
 
 describe("PiAiTranscriptSummarizer", () => {
-  it("sends only timestamped Transcript material and returns structured Markdown", async () => {
+  it("sends only timestamped Transcript material and returns model-written Markdown", async () => {
     const faux = fauxProvider();
     const models = createModels();
     models.setProvider(faux.provider);
@@ -54,6 +38,8 @@ describe("PiAiTranscriptSummarizer", () => {
     if (message?.role === "user") {
       expect(message.content).toContain("[00:00] Introduce a testable idea.");
       expect(message.content).not.toContain("Metadata title must stay local");
+      expect(message.content).toContain("Choose the structure and formatting");
+      expect(message.content).not.toContain("## Overview");
     }
   });
 
@@ -143,30 +129,30 @@ describe("PiAiTranscriptSummarizer", () => {
     expect(faux.state.callCount).toBeGreaterThan(10);
   });
 
-  it("rejects a response that omits the required grounded structure", async () => {
+  it("accepts the model's content without imposing structure or timestamp checks", async () => {
     const faux = fauxProvider();
     const models = createModels();
     models.setProvider(faux.provider);
-    faux.setResponses([fauxAssistantMessage("A generic summary without evidence.")]);
+    const modelWrittenSummary =
+      "The central argument is presented as prose, with a model-chosen timestamp [00:06].";
+    faux.setResponses([fauxAssistantMessage(modelWrittenSummary)]);
+    const summarizer = new PiAiTranscriptSummarizer(models, faux.getModel());
+
+    await expect(summarizer.summarize(transcript())).resolves.toBe(`${modelWrittenSummary}\n`);
+  });
+
+  it("rejects an empty model response", async () => {
+    const faux = fauxProvider();
+    const models = createModels();
+    models.setProvider(faux.provider);
+    faux.setResponses([fauxAssistantMessage("  \n")]);
     const summarizer = new PiAiTranscriptSummarizer(models, faux.getModel());
 
     await expect(summarizer.summarize(transcript())).rejects.toMatchObject({
       name: "SummaryGenerationError",
-      kind: "invalid-response",
+      kind: "empty-response",
+      message: "The Summary model returned no text.",
     } satisfies Partial<SummaryGenerationError>);
-  });
-
-  it("rejects timestamp references that are absent from the Transcript", async () => {
-    const faux = fauxProvider();
-    const models = createModels();
-    models.setProvider(faux.provider);
-    faux.setResponses([fauxAssistantMessage(SUMMARY.replaceAll("[00:05]", "[00:06]"))]);
-    const summarizer = new PiAiTranscriptSummarizer(models, faux.getModel());
-
-    await expect(summarizer.summarize(transcript())).rejects.toMatchObject({
-      kind: "invalid-response",
-      message: "The Summary model returned a timestamp that is not present in the Transcript.",
-    });
   });
 
   it("honors cancellation before making an LLM request", async () => {

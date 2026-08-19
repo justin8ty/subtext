@@ -54,7 +54,7 @@ Delete downloaded audio and processing intermediates after success. Derived Mark
 
 - Controlled LLM call through `pi-ai`; no autonomous agent
 - Transcript-only grounding with timestamp references
-- Overview, chapters, claims, examples, caveats, and takeaways
+- Model-chosen Markdown structure and formatting; Subtext only requires a non-empty, normally completed response
 - Single-pass when context permits; hierarchical summarization otherwise
 - Tested envelope: one to six hours
 - No RAG or interactive Q&A in v1

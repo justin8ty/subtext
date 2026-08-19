@@ -15,20 +15,11 @@ Retain the important claims, examples, qualifications, takeaways, and exact time
 Do not introduce outside information and do not write the final Summary.`;
 const MATERIAL_WRAPPER = "<transcript-derived-material>\n\n</transcript-derived-material>";
 
-const FINAL_SECTIONS = [
-  "Overview",
-  "Chapters",
-  "Claims",
-  "Examples",
-  "Caveats",
-  "Takeaways",
-] as const;
 const MIN_OUTPUT_TOKENS = 256;
 const MAX_OUTPUT_TOKENS = 4_096;
 const CONTEXT_USAGE_FRACTION = 0.8;
-const TIMESTAMP_PATTERN = /\[(?:\d{2}:)?\d{2}:\d{2}\]/gu;
 
-export type SummaryGenerationErrorKind = "cancelled" | "failed" | "invalid-response";
+export type SummaryGenerationErrorKind = "cancelled" | "failed" | "empty-response";
 
 export class SummaryGenerationError extends Error {
   readonly kind: SummaryGenerationErrorKind;
@@ -77,7 +68,6 @@ export class PiAiTranscriptSummarizer implements TranscriptSummarizer {
       outputTokens,
       signal,
     );
-    validateSummaryMarkdown(markdown, transcript.segments);
     return `${markdown.trim()}\n`;
   }
 
@@ -157,7 +147,7 @@ export class PiAiTranscriptSummarizer implements TranscriptSummarizer {
       .join("\n")
       .trim();
     if (text === "") {
-      throw new SummaryGenerationError("invalid-response", "The Summary model returned no text.");
+      throw new SummaryGenerationError("empty-response", "The Summary model returned no text.");
     }
     return text;
   }
@@ -184,10 +174,7 @@ function finalSummaryInstruction(detail: SummaryDetail): string {
       : detail === "detailed"
         ? "Provide a detailed Summary while avoiding repetition and unsupported inference."
         : "Use a balanced level of detail.";
-  return `Write the final Markdown Summary. ${detailInstruction} Start with "# Summary" and include these exact second-level headings in order:
-${FINAL_SECTIONS.map((section) => `## ${section}`).join("\n")}
-
-Ground every substantive point in the supplied material. Include timestamp references in [MM:SS] or [HH:MM:SS] form. Under Chapters, give timestamped chapter entries. If the Transcript does not support a requested category, say so rather than inventing content.`;
+  return `Write the final Markdown Summary. ${detailInstruction} Choose the structure and formatting that best communicate the supplied material.`;
 }
 
 function formatTranscript(segments: readonly TranscriptSegment[]): string {
@@ -302,84 +289,6 @@ function chunkItems(items: readonly string[], maximumTokens: number): string[][]
     groups.push(current);
   }
   return groups;
-}
-
-function validateSummaryMarkdown(
-  markdown: string,
-  transcriptSegments: readonly TranscriptSegment[],
-): void {
-  const lines = markdown.trim().split("\n");
-  const expectedHeadings = ["# Summary", ...FINAL_SECTIONS.map((section) => `## ${section}`)];
-  const headings = lines.map((line) => line.trim()).filter((line) => /^#{1,6}\s/u.test(line));
-  if (
-    headings.length !== expectedHeadings.length ||
-    headings.some((heading, index) => heading !== expectedHeadings[index]) ||
-    lines[0]?.trim() !== "# Summary"
-  ) {
-    throw new SummaryGenerationError(
-      "invalid-response",
-      "The Summary model omitted, duplicated, or reordered the required headings.",
-    );
-  }
-
-  for (const section of FINAL_SECTIONS) {
-    const content = summarySection(lines, section);
-    const substantiveBullets = content.filter(
-      (line) => line.trimStart().startsWith("-") && !isEmptySectionStatement(line),
-    );
-    if (substantiveBullets.some((line) => !hasTimestamp(line))) {
-      throw new SummaryGenerationError(
-        "invalid-response",
-        `The Summary model returned an ungrounded bullet in the ${section} section.`,
-      );
-    }
-  }
-
-  if (!summarySection(lines, "Overview").some(hasTimestamp)) {
-    throw new SummaryGenerationError(
-      "invalid-response",
-      "The Summary model returned an Overview without a timestamp reference.",
-    );
-  }
-  if (!summarySection(lines, "Chapters").some(hasTimestamp)) {
-    throw new SummaryGenerationError(
-      "invalid-response",
-      "The Summary model returned no timestamped Chapters.",
-    );
-  }
-
-  const timestamps = [...markdown.matchAll(TIMESTAMP_PATTERN)].map((match) => match[0]);
-  const transcriptTimestamps = new Set(
-    transcriptSegments.map((segment) => formatTimestamp(segment.startMs)),
-  );
-  if (timestamps.some((timestamp) => !transcriptTimestamps.has(timestamp))) {
-    throw new SummaryGenerationError(
-      "invalid-response",
-      "The Summary model returned a timestamp that is not present in the Transcript.",
-    );
-  }
-}
-
-function summarySection(
-  lines: readonly string[],
-  section: (typeof FINAL_SECTIONS)[number],
-): string[] {
-  const heading = `## ${section}`;
-  const start = lines.findIndex((line) => line.trim() === heading) + 1;
-  const end = lines.findIndex(
-    (line, index) => index >= start && line.trimStart().startsWith("## "),
-  );
-  return lines.slice(start, end === -1 ? undefined : end);
-}
-
-function hasTimestamp(line: string): boolean {
-  return /\[(?:\d{2}:)?\d{2}:\d{2}\]/u.test(line);
-}
-
-function isEmptySectionStatement(line: string): boolean {
-  return /\b(?:none|no\b.*\b(?:stated|provided|given)|not\b.*\b(?:stated|provided|given))\b/iu.test(
-    line,
-  );
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
