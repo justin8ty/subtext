@@ -175,27 +175,27 @@ export class LibraryActionsView extends MenuView<LibraryAction> {
       tui,
       entry.title,
       [
-        { value: "print", label: "Print", description: "Print Transcript and Summary" },
+        { value: "print", label: "View", description: "View Transcript and Summary" },
         {
           value: "regenerate-summary",
           label: "Regenerate Summary",
           description: "Replace the current Summary",
         },
-        { value: "export", label: "Export Transcript", description: "Markdown, text, VTT, or SRT" },
+        { value: "export", label: "Export Transcript", description: "Markdown, TXT, VTT, or SRT" },
         {
           value: "open-video",
-          label: "Open Source Video",
+          label: "Open Video",
           description: "Open in the default browser",
         },
         {
           value: "open-directory",
-          label: "Open Artifact Directory",
-          description: "Open the current revision directory",
+          label: "Open Video Directory",
+          description: "Open the current video directory",
         },
         {
           value: "refresh",
           label: "Refresh",
-          description: "Reacquire the Transcript from YouTube",
+          description: "Refetch the Transcript from YouTube",
         },
         { value: "delete", label: "Delete", description: "Delete all Video Artifacts" },
       ],
