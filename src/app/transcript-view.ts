@@ -12,9 +12,19 @@ import { THEME } from "./theme.js";
 
 export class TranscriptView implements Component {
   readonly transcript: Transcript;
+  private collapsed: boolean;
 
-  constructor(transcript: Transcript) {
+  constructor(transcript: Transcript, collapsed = true) {
     this.transcript = transcript;
+    this.collapsed = collapsed;
+  }
+
+  get isCollapsed(): boolean {
+    return this.collapsed;
+  }
+
+  toggleCollapsed(): void {
+    this.collapsed = !this.collapsed;
   }
 
   render(width: number): string[] {
@@ -22,10 +32,16 @@ export class TranscriptView implements Component {
       return [];
     }
 
+    const disclosure = this.collapsed ? "▶" : "▼";
+    const action = this.collapsed ? "expand" : "collapse";
     const header = new SectionHeader(
       this.transcript.video.title,
-      `Transcript · ${this.transcript.languageCode.toUpperCase()} · ${provenanceLabel(this.transcript)}`,
+      `${disclosure} Transcript · ${this.transcript.languageCode.toUpperCase()} · ${provenanceLabel(this.transcript)} · Ctrl+O ${action}`,
     );
+    if (this.collapsed) {
+      return header.render(width);
+    }
+
     return [
       ...header.render(width),
       "",

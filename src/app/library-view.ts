@@ -195,7 +195,7 @@ export class LibraryActionsView extends MenuView<LibraryAction> {
         {
           value: "refresh",
           label: "Refresh",
-          description: "Refetch the Transcript from YouTube",
+          description: "Refresh the Transcript from YouTube",
         },
         { value: "delete", label: "Delete", description: "Delete all Video Artifacts" },
       ],

@@ -7,28 +7,36 @@ import { TranscriptView, renderTimestampedSegment } from "./transcript-view.js";
 export class TranscriptDraftView implements Component {
   readonly video: SourceVideoRecord;
   private readonly segments: TranscriptSegment[] = [];
-  private completedTranscript: Transcript | null = null;
+  private completedTranscriptView: TranscriptView | null = null;
 
   constructor(video: SourceVideoRecord) {
     this.video = video;
   }
 
   append(segment: TranscriptSegment): void {
-    if (this.completedTranscript === null) {
+    if (this.completedTranscriptView === null) {
       this.segments.push(segment);
     }
   }
 
   complete(transcript: Transcript): void {
-    this.completedTranscript = transcript;
+    this.completedTranscriptView = new TranscriptView(transcript);
+  }
+
+  get isCollapsed(): boolean {
+    return this.completedTranscriptView?.isCollapsed ?? false;
+  }
+
+  toggleCollapsed(): void {
+    this.completedTranscriptView?.toggleCollapsed();
   }
 
   render(width: number): string[] {
     if (width <= 0) {
       return [];
     }
-    if (this.completedTranscript !== null) {
-      return new TranscriptView(this.completedTranscript).render(width);
+    if (this.completedTranscriptView !== null) {
+      return this.completedTranscriptView.render(width);
     }
 
     return [

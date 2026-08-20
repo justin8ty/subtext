@@ -18,6 +18,7 @@ export class HelpView extends Panel {
       new KeyHints(
         [
           ["/", "List App Commands below the editor"],
+          ["Ctrl+O", "Expand or collapse the latest Transcript"],
           ["R", "Regenerate the latest Summary when the editor is empty"],
           ["Esc", "Cancel active processing"],
           ["Ctrl+C", "Cancel active processing, or quit while idle"],

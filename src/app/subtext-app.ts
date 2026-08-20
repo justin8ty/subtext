@@ -86,6 +86,7 @@ export class SubtextApp extends Container {
   private removeInputListener: (() => void) | null = null;
   private activeProcessing: ActiveProcessing | null = null;
   private latestTranscriptVideoId: string | null = null;
+  private latestTranscriptView: TranscriptView | TranscriptDraftView | null = null;
   private nextProcessingId = 1;
   private stopped = false;
 
@@ -112,6 +113,7 @@ export class SubtextApp extends Container {
     this.addChild(
       new KeyHints([
         ["/", "App Commands"],
+        ["Ctrl+O", "toggle Transcript"],
         ["R", "regenerate Summary"],
         ["Esc", "cancel"],
         ["Ctrl+C", "quit"],
@@ -177,6 +179,12 @@ export class SubtextApp extends Container {
 
     if (this.commandPanel.children.length > 0 || this.tui.hasOverlay()) {
       return undefined;
+    }
+
+    if (matchesKey(data, Key.ctrl("o")) && this.latestTranscriptView !== null) {
+      this.latestTranscriptView.toggleCollapsed();
+      this.tui.requestRender();
+      return { consume: true };
     }
 
     if (data === "R" && this.editor.getText().trim() === "" && this.activeProcessing === null) {
@@ -329,9 +337,10 @@ export class SubtextApp extends Container {
     active.transcriptRendered = true;
     this.latestTranscriptVideoId = ready.transcript.video.id;
     if (active.transcriptDraftView === null) {
-      this.appendComponent(new TranscriptView(ready.transcript));
+      this.appendTranscript(ready.transcript);
     } else {
       active.transcriptDraftView.complete(ready.transcript);
+      this.latestTranscriptView = active.transcriptDraftView;
     }
     this.setStatus(
       ready.reused
@@ -347,7 +356,7 @@ export class SubtextApp extends Container {
       case "completed": {
         this.latestTranscriptVideoId = outcome.transcript.video.id;
         if (!transcriptRendered) {
-          this.appendComponent(new TranscriptView(outcome.transcript));
+          this.appendTranscript(outcome.transcript);
         }
         this.appendComponent(new SummaryView(outcome.summaryMarkdown));
         this.setStatus(
@@ -361,7 +370,7 @@ export class SubtextApp extends Container {
       case "unsummarized": {
         this.latestTranscriptVideoId = outcome.transcript.video.id;
         if (!transcriptRendered) {
-          this.appendComponent(new TranscriptView(outcome.transcript));
+          this.appendTranscript(outcome.transcript);
         }
         this.appendMessage(
           outcome.summaryStatus === "cancelled"
@@ -723,7 +732,7 @@ export class SubtextApp extends Container {
       }
 
       this.latestTranscriptVideoId = videoId;
-      this.appendComponent(new TranscriptView(storedTranscript.transcript));
+      this.appendTranscript(storedTranscript.transcript);
       if (storedSummary !== null && storedSummary.revision === storedTranscript.revision) {
         this.appendComponent(new SummaryView(storedSummary.markdown));
       } else {
@@ -813,6 +822,12 @@ export class SubtextApp extends Container {
 
   private appendMessage(message: string, messageTone?: UiTone): void {
     this.appendComponent(new StatusLine(message, messageTone ?? "muted"));
+  }
+
+  private appendTranscript(transcript: TranscriptReady["transcript"]): void {
+    const view = new TranscriptView(transcript);
+    this.latestTranscriptView = view;
+    this.appendComponent(view);
   }
 
   private appendComponent(component: Component): void {

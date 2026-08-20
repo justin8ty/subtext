@@ -136,15 +136,25 @@ describe("SubtextApp", () => {
     await vi.waitFor(() =>
       expect(renderedText(app)).toContain("Transcript and Summary completed."),
     );
-    const rendered = app.render(80).join("\n");
-    expect(stripTerminalSequences(rendered)).toContain("01:05  A later supporting example.");
-    expect(rendered).toContain(`${SOURCE_URL}&t=65s`);
-    expect(rendered).toContain("\u001b[36m◆\u001b[0m \u001b[1;36mSUBTEXT\u001b[0m");
-    expect(rendered).toContain(`\u001b[1;36m${TRANSCRIPT.video.title}\u001b[0m`);
-    expect(rendered).toContain("\u001b[4m\u001b[2;36m01:05\u001b[0m\u001b[0m");
-    expect(rendered).toContain("\u001b[32mTranscript and Summary completed.\u001b[0m");
-    expect(stripTerminalSequences(rendered)).toContain("Takeaways");
-    expect(stripTerminalSequences(rendered)).not.toContain("## Takeaways");
+    const collapsed = app.render(80).join("\n");
+    expect(stripTerminalSequences(collapsed)).toContain(
+      "▶ Transcript · EN · Creator Captions · Ctrl+O expand",
+    );
+    expect(stripTerminalSequences(collapsed)).not.toContain("A later supporting example.");
+    expect(collapsed).toContain("\u001b[36m◆\u001b[0m \u001b[1;36mSUBTEXT\u001b[0m");
+    expect(collapsed).toContain(`\u001b[1;36m${TRANSCRIPT.video.title}\u001b[0m`);
+    expect(collapsed).toContain("\u001b[32mTranscript and Summary completed.\u001b[0m");
+    expect(stripTerminalSequences(collapsed)).toContain("Takeaways");
+    expect(stripTerminalSequences(collapsed)).not.toContain("## Takeaways");
+
+    terminal.send("\u000f");
+    const expanded = app.render(80).join("\n");
+    expect(stripTerminalSequences(expanded)).toContain(
+      "▼ Transcript · EN · Creator Captions · Ctrl+O collapse",
+    );
+    expect(stripTerminalSequences(expanded)).toContain("01:05  A later supporting example.");
+    expect(expanded).toContain(`${SOURCE_URL}&t=65s`);
+    expect(expanded).toContain("\u001b[4m\u001b[2;36m01:05\u001b[0m\u001b[0m");
     app.stop();
   });
 
@@ -214,6 +224,10 @@ describe("SubtextApp", () => {
 
     await vi.waitFor(() => expect(renderedText(app)).toContain("Overview"));
     expect(renderedText(app)).not.toContain("Transcript Draft · ASR · Incomplete");
+    expect(renderedText(app)).toContain("▶ Transcript · EN · Creator Captions · Ctrl+O expand");
+    expect(renderedText(app)).not.toContain("The opening idea.");
+
+    terminal.send("\u000f");
     expect(renderedText(app).match(/The opening idea\./gu)).toHaveLength(1);
     app.stop();
   });
@@ -267,8 +281,14 @@ describe("SubtextApp", () => {
     typeText(terminal, SOURCE_URL);
     terminal.send("\r");
 
-    await vi.waitFor(() => expect(renderedText(app)).toContain("The opening idea."));
+    await vi.waitFor(() =>
+      expect(renderedText(app)).toContain("▶ Transcript · EN · Creator Captions · Ctrl+O expand"),
+    );
+    expect(renderedText(app)).not.toContain("The opening idea.");
     expect(renderedText(app)).not.toContain("Overview");
+
+    terminal.send("\u000f");
+    expect(renderedText(app)).toContain("The opening idea.");
 
     processing.completeSummary();
 
@@ -353,6 +373,9 @@ describe("SubtextApp", () => {
     await vi.waitFor(() =>
       expect(renderedText(app)).toContain("Incomplete — Summary generation was cancelled."),
     );
+    expect(renderedText(app)).toContain("▶ Transcript · EN · Creator Captions · Ctrl+O expand");
+    expect(renderedText(app)).not.toContain("The opening idea.");
+    terminal.send("\u000f");
     expect(renderedText(app)).toContain("The opening idea.");
     app.stop();
   });
@@ -455,6 +478,9 @@ describe("SubtextApp", () => {
 
     await vi.waitFor(() => expect(renderedText(app)).toContain("Overview"));
     expect(renderedText(app)).not.toContain("## Overview");
+    expect(renderedText(app)).toContain("▶ Transcript · EN · Creator Captions · Ctrl+O expand");
+    expect(renderedText(app)).not.toContain("The opening idea.");
+    terminal.send("\u000f");
     expect(renderedText(app)).toContain("The opening idea.");
     expect(renderedText(app)).toContain("Printed Video Artifacts from the Artifact Library.");
     expect(processing.calls).toBe(0);
@@ -687,6 +713,21 @@ describe("SubtextApp", () => {
 });
 
 describe("TranscriptView", () => {
+  it("starts collapsed and toggles its disclosure state", () => {
+    const view = new TranscriptView(TRANSCRIPT);
+
+    expect(stripTerminalSequences(view.render(80).join("\n"))).toContain(
+      "▶ Transcript · EN · Creator Captions · Ctrl+O expand",
+    );
+    expect(stripTerminalSequences(view.render(80).join("\n"))).not.toContain("The opening idea.");
+
+    view.toggleCollapsed();
+    expect(stripTerminalSequences(view.render(80).join("\n"))).toContain(
+      "▼ Transcript · EN · Creator Captions · Ctrl+O collapse",
+    );
+    expect(stripTerminalSequences(view.render(80).join("\n"))).toContain("The opening idea.");
+  });
+
   it.each([5, 20, 80])("keeps every rendered line within a %d-column terminal", (width) => {
     const lines = new TranscriptView(TRANSCRIPT).render(width);
     expect(lines.length).toBeGreaterThan(0);
@@ -742,9 +783,9 @@ describe("TranscriptView", () => {
         },
       ],
     };
-    const lines = new TranscriptView(transcript)
-      .render(28)
-      .map((line) => stripTerminalSequences(line));
+    const view = new TranscriptView(transcript);
+    view.toggleCollapsed();
+    const lines = view.render(28).map((line) => stripTerminalSequences(line));
     const contentStart = lines.indexOf("") + 1;
 
     expect(lines[contentStart]).toBe("01:05  A later supporting");
