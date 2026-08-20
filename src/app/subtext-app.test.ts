@@ -103,13 +103,14 @@ describe("SubtextApp", () => {
       expect(renderedText(app)).toContain("Transcript and Summary completed."),
     );
     const rendered = app.render(80).join("\n");
-    expect(stripTerminalSequences(rendered)).toContain("[01:05] A later supporting example.");
+    expect(stripTerminalSequences(rendered)).toContain("01:05  A later supporting example.");
     expect(rendered).toContain(`${SOURCE_URL}&t=65s`);
     expect(rendered).toContain("\u001b[1;36mSubtext\u001b[0m");
     expect(rendered).toContain(`\u001b[1m${TRANSCRIPT.video.title}\u001b[0m`);
-    expect(rendered).toContain("\u001b[36m[01:05]\u001b[0m");
+    expect(rendered).toContain("\u001b[4m\u001b[2;36m01:05\u001b[0m\u001b[0m");
     expect(rendered).toContain("\u001b[32mTranscript and Summary completed.\u001b[0m");
-    expect(stripTerminalSequences(rendered)).toContain("## Takeaways");
+    expect(stripTerminalSequences(rendered)).toContain("Takeaways");
+    expect(stripTerminalSequences(rendered)).not.toContain("## Takeaways");
     app.stop();
   });
 
@@ -169,11 +170,11 @@ describe("SubtextApp", () => {
       expect(renderedText(app)).toContain("Transcript Draft · ASR · incomplete"),
     );
     expect(renderedText(app)).toContain("The opening idea.");
-    expect(renderedText(app)).not.toContain("## Overview");
+    expect(renderedText(app)).not.toContain("Overview");
 
     processing.complete();
 
-    await vi.waitFor(() => expect(renderedText(app)).toContain("## Overview"));
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Overview"));
     expect(renderedText(app)).not.toContain("Transcript Draft · ASR · incomplete");
     expect(renderedText(app).match(/The opening idea\./gu)).toHaveLength(1);
     app.stop();
@@ -229,11 +230,11 @@ describe("SubtextApp", () => {
     terminal.send("\r");
 
     await vi.waitFor(() => expect(renderedText(app)).toContain("The opening idea."));
-    expect(renderedText(app)).not.toContain("## Overview");
+    expect(renderedText(app)).not.toContain("Overview");
 
     processing.completeSummary();
 
-    await vi.waitFor(() => expect(renderedText(app)).toContain("## Overview"));
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Overview"));
     app.stop();
   });
 
@@ -335,7 +336,8 @@ describe("SubtextApp", () => {
 
     await vi.waitFor(() => expect(processing.summaryCalls).toBe(1));
     await vi.waitFor(() => expect(renderedText(app)).toContain("Summary completed."));
-    expect(renderedText(app)).toContain("## Overview");
+    expect(renderedText(app)).toContain("Overview");
+    expect(renderedText(app)).not.toContain("## Overview");
     expect(processing.processCalls).toBe(1);
     app.stop();
   });
@@ -400,7 +402,8 @@ describe("SubtextApp", () => {
     terminal.send("\r");
     terminal.send("\r");
 
-    await vi.waitFor(() => expect(renderedText(app)).toContain("## Overview"));
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Overview"));
+    expect(renderedText(app)).not.toContain("## Overview");
     expect(renderedText(app)).toContain("The opening idea.");
     expect(renderedText(app)).toContain("Printed Video Artifacts from the Artifact Library.");
     expect(processing.calls).toBe(0);
@@ -558,6 +561,26 @@ describe("TranscriptView", () => {
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
   });
+
+  it("aligns wrapped Transcript text beneath the content instead of the timestamp", () => {
+    const transcript: Transcript = {
+      ...TRANSCRIPT,
+      segments: [
+        {
+          startMs: 65_000,
+          endMs: 80_000,
+          text: "A later supporting example that wraps.",
+        },
+      ],
+    };
+    const lines = new TranscriptView(transcript)
+      .render(28)
+      .map((line) => stripTerminalSequences(line));
+    const contentStart = lines.indexOf("") + 1;
+
+    expect(lines[contentStart]).toBe("01:05  A later supporting");
+    expect(lines[contentStart + 1]).toBe("       example that wraps.");
+  });
 });
 
 describe("SummaryView", () => {
@@ -565,6 +588,23 @@ describe("SummaryView", () => {
     const lines = new SummaryView(SUMMARY_MARKDOWN).render(width);
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+  });
+
+  it("renders Markdown structure and inline styles without leaving markup in copied text", () => {
+    const rendered = new SummaryView(
+      `## Details\n\n- **Important** point with \`code\`\n  - Nested detail`,
+    ).render(80);
+    const styled = rendered.join("\n");
+    const plain = stripTerminalSequences(styled);
+
+    expect(plain).toContain("Details");
+    expect(plain).toContain("- Important point with code");
+    expect(plain).toContain("    - Nested detail");
+    expect(plain).not.toContain("##");
+    expect(plain).not.toContain("**");
+    expect(plain).not.toContain("`code`");
+    expect(styled).toContain("\u001b[33mcode\u001b[0m");
+    expect(styled).toContain("\u001b[1mImportant\u001b[0m");
   });
 });
 

@@ -7,7 +7,7 @@ import {
 } from "@earendil-works/pi-tui";
 
 import type { Transcript, TranscriptSegment } from "../transcript/model.js";
-import { accent, bold, dim } from "./theme.js";
+import { bold, dim, mutedAccent, underline } from "./theme.js";
 
 export class TranscriptView implements Component {
   readonly transcript: Transcript;
@@ -48,8 +48,12 @@ export function renderTimestampedSegment(
   const timestamp = formatTimestamp(segment.startMs);
   const seconds = Math.floor(segment.startMs / 1_000);
   const separator = canonicalUrl.includes("?") ? "&" : "?";
-  const linkedTimestamp = hyperlink(accent(timestamp), `${canonicalUrl}${separator}t=${seconds}s`);
-  const prefixWidth = visibleWidth(timestamp) + 1;
+  const linkedTimestamp = hyperlink(
+    underline(mutedAccent(timestamp)),
+    `${canonicalUrl}${separator}t=${seconds}s`,
+  );
+  const gap = "  ";
+  const prefixWidth = visibleWidth(timestamp) + gap.length;
 
   if (width <= prefixWidth) {
     return [truncateToWidth(linkedTimestamp, width, ""), ...wrapTextWithAnsi(segment.text, width)];
@@ -60,7 +64,7 @@ export function renderTimestampedSegment(
   const [firstLine = "", ...remainingLines] = textLines;
   const indentation = " ".repeat(prefixWidth);
   return [
-    `${linkedTimestamp} ${firstLine}`,
+    `${linkedTimestamp}${gap}${firstLine}`,
     ...remainingLines.map((line) => `${indentation}${line}`),
   ];
 }
@@ -71,11 +75,11 @@ export function formatTimestamp(startMs: number): string {
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const seconds = totalSeconds % 60;
   if (hours > 0) {
-    return `[${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds
+    return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds
       .toString()
-      .padStart(2, "0")}]`;
+      .padStart(2, "0")}`;
   }
-  return `[${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}]`;
+  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function provenanceLabel(transcript: Transcript): string {

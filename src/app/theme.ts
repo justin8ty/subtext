@@ -1,4 +1,4 @@
-import type { EditorTheme, SelectListTheme } from "@earendil-works/pi-tui";
+import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@earendil-works/pi-tui";
 
 export type UiTone = "accent" | "muted" | "success" | "warning" | "error";
 
@@ -6,7 +6,11 @@ const RESET = "\u001b[0m";
 
 export const bold = style("1");
 export const dim = style("2");
+export const italic = style("3");
+export const underline = style("4");
+export const strikethrough = style("9");
 export const accent = style("36");
+export const mutedAccent = style("2;36");
 export const active = style("1;36");
 export const success = style("32");
 export const warning = style("33");
@@ -23,6 +27,23 @@ export const SELECT_THEME: SelectListTheme = {
 export const EDITOR_THEME: EditorTheme = {
   borderColor: accent,
   selectList: SELECT_THEME,
+};
+
+export const MARKDOWN_THEME: MarkdownTheme = {
+  heading: accent,
+  link: accent,
+  linkUrl: dim,
+  code: warning,
+  codeBlock: dim,
+  codeBlockBorder: mutedAccent,
+  quote: dim,
+  quoteBorder: mutedAccent,
+  hr: dim,
+  listBullet: accent,
+  bold,
+  italic,
+  strikethrough,
+  underline,
 };
 
 export function tone(text: string, value: UiTone): string {
