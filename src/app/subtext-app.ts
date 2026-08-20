@@ -37,12 +37,14 @@ import {
   TranscriptExportView,
   type LibraryAction,
 } from "./library-view.js";
-import { KeyHints, SectionHeader, StatusLine, type UiTone } from "./design-system.js";
+import { KeyHints, SectionHeader, SectionLabel, StatusLine, type UiTone } from "./design-system.js";
 import { ProcessingStatusView } from "./processing-status-view.js";
 import { SummaryView } from "./summary-view.js";
 import { TranscriptDraftView } from "./transcript-draft-view.js";
 import { UrlEditor } from "./url-editor.js";
 import { TranscriptView } from "./transcript-view.js";
+
+export const APP_CONTENT_MAX_WIDTH = 104;
 
 export interface SourceVideoProcessing {
   process(sourceUrl: string, options?: VideoProcessingOptions): Promise<VideoProcessingOutcome>;
@@ -76,12 +78,8 @@ export class SubtextApp extends Container {
   private readonly library: ArtifactLibraryAccess | undefined;
   private readonly externalOpener: ExternalOpener | undefined;
   private readonly history = new Container();
-  private readonly status = new StatusLine("Ready. Paste a YouTube URL and press Enter.", "muted");
-  private readonly editorHint = new StatusLine(
-    "Public, completed YouTube videos only · Enter to process",
-    "muted",
-    1,
-  );
+  private readonly status = new Container();
+  private readonly editorContext = new Container();
   private readonly editor: UrlEditor;
   private readonly commandPanel = new Container();
   private removeInputListener: (() => void) | null = null;
@@ -104,10 +102,14 @@ export class SubtextApp extends Container {
     this.addChild(new SectionHeader("Subtext", "Understand a YouTube video without watching it."));
     this.addChild(new Spacer(1));
     this.addChild(this.history);
-    this.addChild(this.status);
+    this.addChild(new Spacer(1));
+    this.addChild(new SectionLabel("Source Video"));
+    this.addChild(new Spacer(1));
     this.addChild(this.editor);
-    this.addChild(this.editorHint);
+    this.addChild(this.editorContext);
     this.addChild(this.commandPanel);
+    this.addChild(this.status);
+    this.addChild(new Spacer(1));
     this.addChild(
       new KeyHints([
         ["/", "App Commands"],
@@ -116,6 +118,13 @@ export class SubtextApp extends Container {
         ["Ctrl+C", "quit"],
       ]),
     );
+  }
+
+  override render(width: number): string[] {
+    if (width <= 0) {
+      return [];
+    }
+    return super.render(Math.min(width, APP_CONTENT_MAX_WIDTH));
   }
 
   start(): void {
@@ -787,16 +796,21 @@ export class SubtextApp extends Container {
 
   private setEditorProcessing(processing: boolean): void {
     this.editor.setProcessing(processing);
-    this.editorHint.setStatus(
-      processing
-        ? "Processing active · New URLs unavailable · / App Commands remain available"
-        : "Public, completed YouTube videos only · Enter to process",
-      "muted",
-    );
+    this.editorContext.clear();
+    if (processing) {
+      this.editorContext.addChild(
+        new StatusLine(
+          "Processing active · New URLs unavailable · / App Commands remain available",
+          "muted",
+          1,
+        ),
+      );
+    }
   }
 
   private setStatus(message: string, statusTone: UiTone): void {
-    this.status.setStatus(message, statusTone);
+    this.status.clear();
+    this.status.addChild(new StatusLine(message, statusTone));
   }
 
   private appendMessage(message: string, messageTone?: UiTone): void {

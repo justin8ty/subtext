@@ -1,12 +1,13 @@
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 
-import { badge, KeyHints, SectionHeader, StatusLine } from "./design-system.js";
+import { badge, KeyHints, SectionHeader, SectionLabel, StatusLine } from "./design-system.js";
 
 describe("app design system", () => {
   it.each([1, 12, 40])("keeps reusable components within %d columns", (width) => {
     const components = [
       new SectionHeader("A long section heading", "Secondary metadata", 1),
+      new SectionLabel("Source Video", 1),
       new KeyHints(
         [
           ["Enter", "select the active row"],

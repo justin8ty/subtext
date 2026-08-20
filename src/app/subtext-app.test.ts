@@ -28,7 +28,7 @@ import type {
   VideoProcessingOutcome,
 } from "../processing/process-video.js";
 import { TRANSCRIPT_SCHEMA_VERSION, type Transcript } from "../transcript/model.js";
-import { SubtextApp, type SourceVideoProcessing } from "./subtext-app.js";
+import { APP_CONTENT_MAX_WIDTH, SubtextApp, type SourceVideoProcessing } from "./subtext-app.js";
 import { SummaryView } from "./summary-view.js";
 import { TranscriptView } from "./transcript-view.js";
 
@@ -81,7 +81,7 @@ const TRANSCRIPT: Transcript = {
 };
 
 describe("SubtextApp", () => {
-  it("renders a focused URL editor with placeholder text and a contextual hint", () => {
+  it("renders a compact, labeled URL section without redundant startup status", () => {
     const terminal = new FakeTerminal();
     const tui: TUI = new TuiMainScreen(terminal);
     const app = new SubtextApp(
@@ -96,9 +96,15 @@ describe("SubtextApp", () => {
 
     const rendered = app.render(80).join("\n");
     const plain = stripTerminalSequences(rendered);
+    expect(plain).toContain("SOURCE VIDEO");
     expect(plain).toContain("Paste a YouTube URL…");
-    expect(plain).toContain("Public, completed YouTube videos only · Enter to process");
+    expect(plain).not.toContain("● Ready");
+    expect(plain).not.toContain("Public, completed YouTube videos only · Enter to process");
     expect(rendered).toContain("\u001b[36m╭");
+
+    const wideLines = app.render(240);
+    expect(wideLines.every((line) => visibleWidth(line) <= APP_CONTENT_MAX_WIDTH)).toBe(true);
+    expect(wideLines.some((line) => visibleWidth(line) === APP_CONTENT_MAX_WIDTH)).toBe(true);
     app.stop();
   });
 
