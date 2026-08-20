@@ -1,7 +1,7 @@
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 
-import { badge, KeyHints, SectionHeader, StatusLine } from "./design-system.js";
+import { badge, KeyHints, SectionHeader, StatusLine, TabBar } from "./design-system.js";
 
 describe("app design system", () => {
   it.each([1, 12, 40])("keeps reusable components within %d columns", (width) => {
@@ -15,6 +15,14 @@ describe("app design system", () => {
         { paddingX: 1 },
       ),
       new StatusLine("Processing completed successfully.", "success"),
+      new TabBar(
+        [
+          { value: "models", label: "Models" },
+          { value: "summary", label: "Summary" },
+        ],
+        "models",
+        1,
+      ),
     ];
 
     for (const component of components) {

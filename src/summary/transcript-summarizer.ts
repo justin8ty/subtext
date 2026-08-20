@@ -39,17 +39,29 @@ export class PiAiTranscriptSummarizer implements TranscriptSummarizer {
   readonly models: Models;
   readonly model: Model<Api>;
   readonly detail: SummaryDetail;
+  readonly instructions: string;
 
-  constructor(models: Models, model: Model<Api>, detail: SummaryDetail = "standard") {
+  constructor(
+    models: Models,
+    model: Model<Api>,
+    detail: SummaryDetail = "standard",
+    instructions = "",
+  ) {
     this.models = models;
     this.model = model;
     this.detail = detail;
+    this.instructions = instructions.trim();
   }
 
   async summarize(transcript: Transcript, signal?: AbortSignal): Promise<string> {
     throwIfAborted(signal);
     const outputTokens = summaryOutputTokens(this.model);
-    const inputTokens = summaryInputTokens(this.model, outputTokens, this.detail);
+    const inputTokens = summaryInputTokens(
+      this.model,
+      outputTokens,
+      this.detail,
+      this.instructions,
+    );
     const transcriptText = formatTranscript(transcript.segments);
 
     let sourceMaterial = transcriptText;
@@ -63,7 +75,7 @@ export class PiAiTranscriptSummarizer implements TranscriptSummarizer {
     }
 
     const markdown = await this.request(
-      finalSummaryInstruction(this.detail),
+      finalSummaryInstruction(this.detail, this.instructions),
       sourceMaterial,
       outputTokens,
       signal,
@@ -167,14 +179,18 @@ export class UnconfiguredTranscriptSummarizer implements TranscriptSummarizer {
   }
 }
 
-function finalSummaryInstruction(detail: SummaryDetail): string {
+function finalSummaryInstruction(detail: SummaryDetail, instructions = ""): string {
   const detailInstruction =
     detail === "concise"
       ? "Keep the Summary concise and prioritize only the most important material."
       : detail === "detailed"
         ? "Provide a detailed Summary while avoiding repetition and unsupported inference."
         : "Use a balanced level of detail.";
-  return `Write the final Markdown Summary. ${detailInstruction} Choose the structure and formatting that best communicate the supplied material.`;
+  const customInstruction =
+    instructions === ""
+      ? ""
+      : ` Apply these user preferences when they do not conflict with transcript-only grounding: ${JSON.stringify(instructions)}.`;
+  return `Write the final Markdown Summary. ${detailInstruction} Choose the structure and formatting that best communicate the supplied material.${customInstruction}`;
 }
 
 function formatTranscript(segments: readonly TranscriptSegment[]): string {
@@ -203,10 +219,11 @@ function summaryInputTokens(
   model: Model<Api>,
   outputTokens: number,
   detail: SummaryDetail,
+  instructions: string,
 ): number {
   const usableContext = Math.floor(model.contextWindow * CONTEXT_USAGE_FRACTION);
   const promptOverhead = estimateTokens(
-    `${SYSTEM_PROMPT}\n${finalSummaryInstruction(detail)}\n${CHUNK_INSTRUCTION}\n${REDUCTION_INSTRUCTION}\n${MATERIAL_WRAPPER}`,
+    `${SYSTEM_PROMPT}\n${finalSummaryInstruction(detail, instructions)}\n${CHUNK_INSTRUCTION}\n${REDUCTION_INSTRUCTION}\n${MATERIAL_WRAPPER}`,
   );
   return Math.max(1, usableContext - outputTokens - promptOverhead);
 }

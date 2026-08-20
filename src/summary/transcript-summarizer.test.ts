@@ -65,6 +65,35 @@ describe("PiAiTranscriptSummarizer", () => {
     }
   });
 
+  it("applies custom instructions only to the final Summary request", async () => {
+    const faux = fauxProvider();
+    const models = createModels();
+    models.setProvider(faux.provider);
+    let receivedContext: Context | undefined;
+    faux.setResponses([
+      (context) => {
+        receivedContext = context;
+        return fauxAssistantMessage(SUMMARY);
+      },
+    ]);
+    const summarizer = new PiAiTranscriptSummarizer(
+      models,
+      faux.getModel(),
+      "standard",
+      "Focus on concrete examples.",
+    );
+
+    await summarizer.summarize(transcript());
+
+    const message = receivedContext?.messages[0];
+    expect(message?.role).toBe("user");
+    if (message?.role === "user") {
+      expect(message.content).toContain('"Focus on concrete examples."');
+      expect(message.content).toContain("when they do not conflict with transcript-only grounding");
+    }
+    expect(receivedContext?.systemPrompt).toContain("Do not add outside facts");
+  });
+
   it("uses hierarchical reduction when the Transcript exceeds the model context", async () => {
     const faux = fauxProvider({
       models: [{ id: "small-context", contextWindow: 1_000, maxTokens: 300 }],

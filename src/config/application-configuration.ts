@@ -24,6 +24,11 @@ export interface ConfigurationModelOption {
   readonly description: string;
 }
 
+export interface ConfigurationAuthentication {
+  readonly authenticated: boolean;
+  readonly source?: string;
+}
+
 export interface ConfigurationUpdate extends ApplicationSettingsInput {
   readonly apiKey?: string;
 }
@@ -32,6 +37,7 @@ export interface ApplicationConfigurationAccess {
   readonly current: ApplicationSettings | null;
   providers(): readonly ConfigurationProviderOption[];
   models(providerId: string): readonly ConfigurationModelOption[];
+  authentication(providerId: string): Promise<ConfigurationAuthentication>;
   save(update: ConfigurationUpdate): Promise<ApplicationSettings>;
 }
 
@@ -73,6 +79,16 @@ export class ApplicationConfiguration implements ApplicationConfigurationAccess 
       .sort((left, right) => left.label.localeCompare(right.label));
   }
 
+  async authentication(providerId: string): Promise<ConfigurationAuthentication> {
+    const authentication = await this.modelsCollection.checkAuth(providerId);
+    if (authentication === undefined) {
+      return { authenticated: false };
+    }
+    return authentication.source === undefined
+      ? { authenticated: true }
+      : { authenticated: true, source: authentication.source };
+  }
+
   async save(update: ConfigurationUpdate): Promise<ApplicationSettings> {
     const model = this.modelsCollection.getModel(update.summaryProvider, update.summaryModel);
     if (model === undefined) {
@@ -108,7 +124,12 @@ export class ApplicationConfiguration implements ApplicationConfigurationAccess 
         `The configured Summary model ${settings.summaryProvider}/${settings.summaryModel} is not available.`,
       );
     }
-    return new PiAiTranscriptSummarizer(this.modelsCollection, model, settings.summaryDetail);
+    return new PiAiTranscriptSummarizer(
+      this.modelsCollection,
+      model,
+      settings.summaryDetail,
+      settings.summaryInstructions,
+    );
   }
 }
 

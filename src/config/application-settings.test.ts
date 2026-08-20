@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -31,20 +31,30 @@ describe("Subtext configuration", () => {
       summaryProvider: "deepseek",
       summaryModel: "deepseek-v4-flash",
       summaryDetail: "detailed",
+      summaryInstructions: "Emphasize practical examples.",
       asrQuality: "accurate",
       apiKey: "fixture-key",
     });
 
     const reloaded = new ApplicationSettingsStore(rootDirectory);
     await expect(reloaded.load()).resolves.toMatchObject({
+      schemaVersion: 2,
       summaryProvider: "deepseek",
       summaryModel: "deepseek-v4-flash",
       summaryDetail: "detailed",
+      summaryInstructions: "Emphasize practical examples.",
       asrQuality: "accurate",
     });
     await expect(credentials.read("deepseek")).resolves.toEqual({
       type: "api_key",
       key: "fixture-key",
+    });
+    await expect(configuration.authentication("deepseek")).resolves.toMatchObject({
+      authenticated: true,
+    });
+    expect(configuration.createSummarizer()).toMatchObject({
+      detail: "detailed",
+      instructions: "Emphasize practical examples.",
     });
     await expect(readFile(join(rootDirectory, "auth.json"), "utf8")).resolves.toContain(
       '"type": "api_key"',
@@ -52,6 +62,27 @@ describe("Subtext configuration", () => {
     await expect(readFile(join(rootDirectory, "settings.json"), "utf8")).resolves.not.toContain(
       "fixture-key",
     );
+  });
+
+  it("migrates version 1 settings with empty custom Summary instructions", async () => {
+    const rootDirectory = await temporaryDirectory();
+    await mkdir(rootDirectory, { recursive: true });
+    await writeFile(
+      join(rootDirectory, "settings.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        summaryProvider: "deepseek",
+        summaryModel: "deepseek-v4-flash",
+        summaryDetail: "standard",
+        asrQuality: "balanced",
+      })}\n`,
+    );
+
+    const settingsStore = new ApplicationSettingsStore(rootDirectory);
+    await expect(settingsStore.load()).resolves.toMatchObject({
+      schemaVersion: 2,
+      summaryInstructions: "",
+    });
   });
 
   it("retains existing authentication when Options save no replacement key", async () => {
@@ -66,6 +97,7 @@ describe("Subtext configuration", () => {
       summaryProvider: "deepseek",
       summaryModel: "deepseek-v4-flash",
       summaryDetail: "concise",
+      summaryInstructions: "",
       asrQuality: "balanced",
     });
 

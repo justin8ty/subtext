@@ -4,7 +4,7 @@
 
 Subtext is a local-first terminal app for Windows 11 and Linux that helps users understand a public, completed, single YouTube video without watching it.
 
-Media acquisition, ASR, Transcript normalization, and artifact storage remain local. Only Transcript-derived text may be sent to the user-configured LLM provider.
+Media acquisition, ASR, Transcript normalization, and artifact storage remain local. Only Transcript-derived text and user-configured Summary instructions may be sent to the user-configured LLM provider.
 
 ## Workflow
 
@@ -30,13 +30,13 @@ Translated captions, translated audio, live streams, playlists, private videos, 
 - One active Source Video at a time
 - Library and Help remain available during processing
 - Additional URLs are rejected rather than queued
-- Options changed during processing apply only to future work
+- Options use independent Models, Summary, and ASR tabs; changes made during processing apply only to future work
 - Library actions are contextual: print, regenerate Summary, export, open the Source Video or artifact directory, and delete with confirmation
 - ASR Transcript Drafts stream into scrollback
 - Cancellation leaves an explicit incomplete marker but saves no draft
 - First-run setup handles LLM authentication, model selection, and ASR preparation
 - Rendered timestamps link to the corresponding position in the Source Video when the terminal supports hyperlinks
-- Options persist only intent-level choices: provider/model, summary detail, ASR quality, and runtime update/repair; low-level engine settings remain automatic
+- Options persist only intent-level choices: provider/model, summary detail, optional custom Summary instructions, ASR quality, and runtime update/repair; low-level engine settings remain automatic
 
 ## Artifacts
 
@@ -54,7 +54,7 @@ Delete downloaded audio and processing intermediates after success. Derived Mark
 
 - Controlled LLM call through `pi-ai`; no autonomous agent
 - Transcript-only grounding with timestamp references
-- Model-chosen Markdown structure and formatting; Subtext only requires a non-empty, normally completed response
+- Model-chosen Markdown structure and formatting, guided by optional user Summary instructions; Subtext only requires a non-empty, normally completed response
 - Single-pass when context permits; hierarchical summarization otherwise
 - Tested envelope: one to six hours
 - No RAG or interactive Q&A in v1

@@ -4,6 +4,10 @@ import { THEME } from "./theme.js";
 
 export type UiTone = "accent" | "muted" | "success" | "warning" | "error";
 export type KeyHint = readonly [key: string, description: string];
+export interface TabItem<Value extends string> {
+  readonly value: Value;
+  readonly label: string;
+}
 
 export class StatusLine extends Text {
   constructor(message: string, tone: UiTone = "muted", paddingX = 0) {
@@ -32,6 +36,31 @@ export class SectionHeader implements Component {
       return title;
     }
     return [...title, ...renderPadded(THEME.muted(this.metadata), width, this.paddingX)];
+  }
+
+  invalidate(): void {}
+}
+
+export class TabBar<Value extends string> implements Component {
+  readonly tabs: readonly TabItem<Value>[];
+  readonly active: Value;
+  private readonly paddingX: number;
+
+  constructor(tabs: readonly TabItem<Value>[], active: Value, paddingX = 0) {
+    this.tabs = tabs;
+    this.active = active;
+    this.paddingX = paddingX;
+  }
+
+  render(width: number): string[] {
+    const text = this.tabs
+      .map((tab) =>
+        tab.value === this.active
+          ? THEME.selected(` ${tab.label} `)
+          : THEME.muted(` ${tab.label} `),
+      )
+      .join(" ");
+    return renderPadded(text, width, this.paddingX);
   }
 
   invalidate(): void {}
@@ -67,6 +96,10 @@ export class KeyHints implements Component {
 
 export function badge(label: string, tone: UiTone = "accent"): string {
   return statusText(`[${label}]`, tone);
+}
+
+export function selectionLabel(text: string): string {
+  return `${text}\u001b[0m`;
 }
 
 export function statusText(text: string, tone: UiTone): string {

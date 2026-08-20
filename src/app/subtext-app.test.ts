@@ -397,23 +397,30 @@ describe("SubtextApp", () => {
 
     expect(tui.hasOverlay()).toBe(false);
     expect(renderedText(app)).toContain("Set up Subtext");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Summary models"));
+    expect(renderedText(app)).not.toContain("[AUTH REQUIRED]");
     terminal.send("\r");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Authenticate DeepSeek"));
     typeText(terminal, "fixture-secret-key");
     expect(renderedText(app)).not.toContain("fixture-secret-key");
     terminal.send("\r");
-    terminal.send("\r");
-    terminal.send("\r");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Choose a Summary model"));
     terminal.send("\r");
 
     await vi.waitFor(() => expect(configuration.saved?.apiKey).toBe("fixture-secret-key"));
-    await vi.waitFor(() => expect(renderedText(app)).not.toContain("Set up Subtext"));
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Summary model saved."));
+    expect(renderedText(app)).toContain("Subtext Options");
     expect(tui.hasOverlay()).toBe(false);
     expect(configuration.current).toMatchObject({
       summaryProvider: "deepseek",
       summaryModel: "deepseek-v4-flash",
       summaryDetail: "standard",
+      summaryInstructions: "",
       asrQuality: "balanced",
     });
+    terminal.send("\u001b");
+    terminal.send("\u001b");
+    await vi.waitFor(() => expect(renderedText(app)).not.toContain("Subtext Options"));
     app.stop();
   });
 
@@ -565,6 +572,84 @@ describe("SubtextApp", () => {
 
     await vi.waitFor(() => expect(library.deleteCalls).toBe(1));
     expect(renderedText(app)).toContain("Video Artifacts deleted.");
+    app.stop();
+  });
+
+  it("saves model, Summary, and ASR Options independently through tabs", async () => {
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const configuration = new MutableOptionsConfiguration();
+    const app = new SubtextApp(
+      tui,
+      new ImmediateProcessing({
+        status: "needs-input",
+        reason: "invalid-source-url",
+        message: "Enter a URL.",
+      }),
+      { configuration },
+    );
+    app.start();
+
+    terminal.send("/");
+    typeText(terminal, "settings");
+    terminal.send("\r");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Summary models"));
+    const modelsScreen = renderedText(app);
+    expect(modelsScreen).toContain("Models");
+    expect(modelsScreen).toContain("Summary");
+    expect(modelsScreen).toContain("ASR");
+    expect(modelsScreen).toContain("✓ DeepSeek");
+    expect(modelsScreen.indexOf("✓ DeepSeek")).toBeLessThan(modelsScreen.indexOf("OpenAI"));
+    expect(modelsScreen).toContain("[AUTHENTICATED]");
+    expect(modelsScreen).toContain("[CURRENT]");
+    const styledProviders = app.render(80).join("\n");
+    expect(styledProviders).toContain("\u001b[1;30;46m→ ✓ DeepSeek\u001b[0m");
+    expect(styledProviders).toContain("\u001b[32m[AUTHENTICATED]\u001b[0m");
+    terminal.send("\r");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Choose a Summary model"));
+    expect(renderedText(app)).toContain("✓ deepseek-v4-flash");
+    expect(renderedText(app)).toContain("Update authentication…");
+    const styledModels = app.render(80).join("\n");
+    expect(styledModels).toContain("\u001b[1;30;46m→ ✓ deepseek-v4-flash\u001b[0m");
+    expect(styledModels).toContain("\u001b[36m[CURRENT]\u001b[0m");
+    terminal.send("\u001b");
+
+    terminal.send("\t");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Summary preferences"));
+    terminal.send("\r");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Short overview and key points"));
+    terminal.send("\u001b[B");
+    terminal.send("\r");
+    await vi.waitFor(() => expect(configuration.current?.summaryDetail).toBe("detailed"));
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Summary detail saved."));
+
+    terminal.send("\u001b[B");
+    terminal.send("\r");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Custom Summary instructions"));
+    typeText(terminal, "Focus on concrete examples.");
+    terminal.send("\r");
+    await vi.waitFor(() =>
+      expect(configuration.current?.summaryInstructions).toBe("Focus on concrete examples."),
+    );
+    await vi.waitFor(() =>
+      expect(renderedText(app)).toContain("Custom Summary instructions saved."),
+    );
+
+    terminal.send("\t");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("ASR quality"));
+    terminal.send("\u001b[B");
+    terminal.send("\r");
+    await vi.waitFor(() => expect(configuration.current?.asrQuality).toBe("accurate"));
+    await vi.waitFor(() => expect(renderedText(app)).toContain("ASR quality saved."));
+
+    expect(configuration.saves).toHaveLength(3);
+    expect(
+      configuration.saves.every(
+        (update) =>
+          update.summaryProvider === "deepseek" && update.summaryModel === "deepseek-v4-flash",
+      ),
+    ).toBe(true);
+    terminal.send("\u001b");
     app.stop();
   });
 
@@ -1044,9 +1129,56 @@ class FirstRunConfiguration implements ApplicationConfigurationAccess {
     ];
   }
 
+  async authentication(): Promise<{ authenticated: boolean }> {
+    return { authenticated: this.current !== null };
+  }
+
   async save(update: ConfigurationUpdate): Promise<ApplicationSettings> {
     this.saved = update;
-    this.current = { schemaVersion: 1, ...update };
+    this.current = settingsFromUpdate(update);
+    return this.current;
+  }
+}
+
+class MutableOptionsConfiguration implements ApplicationConfigurationAccess {
+  current: ApplicationSettings | null = {
+    schemaVersion: 2,
+    summaryProvider: "deepseek",
+    summaryModel: "deepseek-v4-flash",
+    summaryDetail: "standard",
+    summaryInstructions: "",
+    asrQuality: "balanced",
+  };
+  readonly saves: ConfigurationUpdate[] = [];
+
+  providers(): readonly { id: string; label: string }[] {
+    return [
+      { id: "openai", label: "OpenAI" },
+      { id: "deepseek", label: "DeepSeek" },
+    ];
+  }
+
+  models(providerId: string): readonly { id: string; label: string; description: string }[] {
+    return providerId === "deepseek"
+      ? [
+          {
+            id: "deepseek-v4-flash",
+            label: "deepseek-v4-flash",
+            description: "DeepSeek V4 Flash",
+          },
+        ]
+      : [{ id: "gpt-fixture", label: "gpt-fixture", description: "OpenAI fixture" }];
+  }
+
+  async authentication(providerId: string): Promise<{ authenticated: boolean; source?: string }> {
+    return providerId === "deepseek"
+      ? { authenticated: true, source: "DEEPSEEK_API_KEY" }
+      : { authenticated: false };
+  }
+
+  async save(update: ConfigurationUpdate): Promise<ApplicationSettings> {
+    this.saves.push(update);
+    this.current = settingsFromUpdate(update);
     return this.current;
   }
 }
@@ -1054,16 +1186,35 @@ class FirstRunConfiguration implements ApplicationConfigurationAccess {
 function configuredApplication(): ApplicationConfigurationAccess {
   return {
     current: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       summaryProvider: "deepseek",
       summaryModel: "deepseek-v4-flash",
       summaryDetail: "standard",
+      summaryInstructions: "",
       asrQuality: "accurate",
     },
-    providers: () => [],
-    models: () => [],
+    providers: () => [{ id: "deepseek", label: "DeepSeek" }],
+    models: () => [
+      {
+        id: "deepseek-v4-flash",
+        label: "deepseek-v4-flash",
+        description: "DeepSeek V4 Flash",
+      },
+    ],
+    authentication: async () => ({ authenticated: true, source: "DEEPSEEK_API_KEY" }),
     save: async () => {
       throw new Error("Options save is not expected in this test.");
     },
+  };
+}
+
+function settingsFromUpdate(update: ConfigurationUpdate): ApplicationSettings {
+  return {
+    schemaVersion: 2,
+    summaryProvider: update.summaryProvider,
+    summaryModel: update.summaryModel,
+    summaryDetail: update.summaryDetail,
+    summaryInstructions: update.summaryInstructions,
+    asrQuality: update.asrQuality,
   };
 }

@@ -7,6 +7,7 @@ export { ManagedAsrAdapter } from "./asr/managed-asr-adapter.js";
 export {
   ApplicationConfiguration,
   type ApplicationConfigurationAccess,
+  type ConfigurationAuthentication,
   type ConfigurationModelOption,
   type ConfigurationProviderOption,
   type ConfigurationUpdate,
@@ -14,6 +15,7 @@ export {
 export {
   ApplicationSettingsError,
   ApplicationSettingsStore,
+  MAX_SUMMARY_INSTRUCTIONS_LENGTH,
   FileCredentialStore,
   type ApplicationSettings,
   type ApplicationSettingsInput,

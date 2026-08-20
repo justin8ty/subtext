@@ -14,11 +14,14 @@ import type { AsrQuality } from "../runtime/runtime-manifest.js";
 
 export type SummaryDetail = "concise" | "standard" | "detailed";
 
+export const MAX_SUMMARY_INSTRUCTIONS_LENGTH = 4_000;
+
 export interface ApplicationSettings {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly summaryProvider: string;
   readonly summaryModel: string;
   readonly summaryDetail: SummaryDetail;
+  readonly summaryInstructions: string;
   readonly asrQuality: AsrQuality;
 }
 
@@ -26,6 +29,7 @@ export interface ApplicationSettingsInput {
   readonly summaryProvider: string;
   readonly summaryModel: string;
   readonly summaryDetail: SummaryDetail;
+  readonly summaryInstructions: string;
   readonly asrQuality: AsrQuality;
 }
 
@@ -34,6 +38,7 @@ interface SettingsFile {
   readonly summaryProvider: string;
   readonly summaryModel: string;
   readonly summaryDetail: string;
+  readonly summaryInstructions?: string;
   readonly asrQuality: string;
 }
 
@@ -78,7 +83,7 @@ export class ApplicationSettingsStore {
   }
 
   async save(input: ApplicationSettingsInput): Promise<ApplicationSettings> {
-    const settings = validateSettings({ schemaVersion: 1, ...input });
+    const settings = validateSettings({ schemaVersion: 2, ...input });
     try {
       await writePrivateJson(join(this.rootDirectory, SETTINGS_FILENAME), settings);
       this.currentSettings = settings;
@@ -168,20 +173,24 @@ export class FileCredentialStore implements CredentialStore {
 }
 
 function validateSettings(value: SettingsFile): ApplicationSettings {
+  const summaryInstructions = value.schemaVersion === 1 ? "" : value.summaryInstructions;
   if (
-    value.schemaVersion !== 1 ||
+    (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
     value.summaryProvider.trim() === "" ||
     value.summaryModel.trim() === "" ||
     !isSummaryDetail(value.summaryDetail) ||
+    summaryInstructions === undefined ||
+    summaryInstructions.length > MAX_SUMMARY_INSTRUCTIONS_LENGTH ||
     !isAsrQuality(value.asrQuality)
   ) {
     throw new Error("Invalid settings file shape.");
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     summaryProvider: value.summaryProvider,
     summaryModel: value.summaryModel,
     summaryDetail: value.summaryDetail,
+    summaryInstructions: summaryInstructions.trim(),
     asrQuality: value.asrQuality,
   };
 }

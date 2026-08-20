@@ -759,7 +759,6 @@ export class SubtextApp extends Container {
     const close = (): void => this.closeCommandPanel();
     const save = async (update: ConfigurationUpdate): Promise<void> => {
       await configuration.save(update);
-      close();
       if (this.activeProcessing === null) {
         this.setStatus("Options saved. Ready for a YouTube URL.", "success");
       } else {

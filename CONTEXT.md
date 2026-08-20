@@ -48,6 +48,10 @@ _Avoid_: Transcript type, metadata
 An interpretation grounded exclusively in a Transcript that helps a user understand the Source Video and identifies supporting times. It never replaces the Transcript.
 _Avoid_: Transcript, transcription
 
+**Summary Instructions**:
+Optional user-authored preferences for the focus, organization, or presentation of a Summary. They remain subordinate to Transcript-only grounding and do not alter the Transcript.
+_Avoid_: System prompt, Summary prompt
+
 **Unsummarized Transcript**:
 A completed Transcript for which no current Summary is available.
 _Avoid_: Failed video, incomplete Transcript
