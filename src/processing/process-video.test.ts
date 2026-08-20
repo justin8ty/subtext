@@ -8,6 +8,7 @@ import type { AcquisitionOptions, AcquisitionOutcome } from "../acquisition/acqu
 import { ArtifactLibrary } from "../artifacts/artifact-library.js";
 import {
   SummaryGenerationError,
+  type SummaryGenerationOptions,
   type TranscriptSummarizer,
 } from "../summary/transcript-summarizer.js";
 import { TRANSCRIPT_SCHEMA_VERSION, type Transcript } from "../transcript/model.js";
@@ -73,12 +74,16 @@ describe("VideoProcessor", () => {
     const library = new ArtifactLibrary(await temporaryLibrary());
     const acquisition = await completedAcquisition(library);
     const events: string[] = [];
-    const summarizer = new ScriptedSummarizer([SUMMARY], () => events.push("summary"));
+    const summarizer = new ScriptedSummarizer([SUMMARY], (options) => {
+      options.onUpdate?.("# Summary");
+      events.push("summary");
+    });
     const processor = new VideoProcessor(acquisition, library, () => summarizer);
 
     const first = await processor.process(TRANSCRIPT.video.canonicalUrl, {
       onTranscript: () => events.push("transcript"),
       onStage: (stage) => events.push(stage),
+      onSummaryUpdate: (markdown) => events.push(markdown),
     });
 
     expect(first).toMatchObject({
@@ -86,7 +91,7 @@ describe("VideoProcessor", () => {
       reusedTranscript: false,
       reusedSummary: false,
     });
-    expect(events).toEqual(["transcript", "generating-summary", "summary"]);
+    expect(events).toEqual(["transcript", "generating-summary", "# Summary", "summary"]);
     if (first.status !== "completed") {
       return;
     }
@@ -103,7 +108,7 @@ describe("VideoProcessor", () => {
       reusedSummary: true,
     });
     expect(summarizer.calls).toBe(1);
-    expect(events).toEqual(["transcript", "generating-summary", "summary"]);
+    expect(events).toEqual(["transcript", "generating-summary", "# Summary", "summary"]);
   });
 
   it("forwards streamed Transcript Draft segments before the completed Transcript", async () => {
@@ -234,16 +239,22 @@ class FixedAcquisition implements TranscriptAcquisition {
 
 class ScriptedSummarizer implements TranscriptSummarizer {
   readonly responses: (string | Error)[];
-  readonly onSummarize: (() => void) | undefined;
+  readonly onSummarize: ((options: SummaryGenerationOptions) => void) | undefined;
   calls = 0;
 
-  constructor(responses: (string | Error)[], onSummarize?: () => void) {
+  constructor(
+    responses: (string | Error)[],
+    onSummarize?: (options: SummaryGenerationOptions) => void,
+  ) {
     this.responses = responses;
     this.onSummarize = onSummarize;
   }
 
-  async summarize(): Promise<string> {
-    this.onSummarize?.();
+  async summarize(
+    _transcript: Transcript,
+    options: SummaryGenerationOptions = {},
+  ): Promise<string> {
+    this.onSummarize?.(options);
     const response = this.responses[this.calls];
     this.calls += 1;
     if (response === undefined) {

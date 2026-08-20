@@ -3,12 +3,17 @@ import { Markdown, stripTerminalSequences, type Component } from "@earendil-work
 import { MARKDOWN_THEME } from "./theme.js";
 
 export class SummaryView implements Component {
-  readonly markdown: string;
-  private readonly renderer: Markdown;
+  markdown: string;
+  private renderer: Markdown;
 
   constructor(markdown: string) {
     this.markdown = markdown;
-    this.renderer = new Markdown(stripTerminalSequences(markdown).trimEnd(), 0, 0, MARKDOWN_THEME);
+    this.renderer = this.createRenderer(markdown);
+  }
+
+  setMarkdown(markdown: string): void {
+    this.markdown = markdown;
+    this.renderer = this.createRenderer(markdown);
   }
 
   render(width: number): string[] {
@@ -20,5 +25,9 @@ export class SummaryView implements Component {
 
   invalidate(): void {
     this.renderer.invalidate();
+  }
+
+  private createRenderer(markdown: string): Markdown {
+    return new Markdown(stripTerminalSequences(markdown).trimEnd(), 0, 0, MARKDOWN_THEME);
   }
 }

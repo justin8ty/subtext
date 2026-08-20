@@ -69,6 +69,7 @@ interface ActiveProcessing {
   cancellationRequested: boolean;
   transcriptRendered: boolean;
   transcriptDraftView: TranscriptDraftView | null;
+  summaryView: SummaryView | null;
   readonly stageView: ProcessingStatusView;
 }
 
@@ -266,6 +267,7 @@ export class SubtextApp extends Container {
         onStage: (stage) => this.renderProcessingStage(stage, active),
         onTranscript: (ready) => this.renderReadyTranscript(ready, active),
         onTranscriptDraft: (draft) => this.renderTranscriptDraft(draft, active),
+        onSummaryUpdate: (markdown) => this.renderSummaryUpdate(markdown, active),
       };
       if (refresh) {
         processingOptions.refresh = true;
@@ -292,7 +294,7 @@ export class SubtextApp extends Container {
       return;
     }
     active.stageView.finish(videoOutcomeTone(outcome));
-    this.renderVideoOutcome(outcome, active.transcriptRendered);
+    this.renderVideoOutcome(outcome, active.transcriptRendered, active);
     this.restoreEditorFocus();
     this.tui.requestRender();
   }
@@ -306,6 +308,24 @@ export class SubtextApp extends Container {
     }
     active.stageView.update(stage);
     this.setStatus("Esc cancels active processing.", "muted");
+    this.tui.requestRender();
+  }
+
+  private renderSummaryUpdate(markdown: string, active: ActiveProcessing): void {
+    if (
+      this.stopped ||
+      this.activeProcessing?.id !== active.id ||
+      active.cancellationRequested ||
+      markdown.trim() === ""
+    ) {
+      return;
+    }
+    if (active.summaryView === null) {
+      active.summaryView = new SummaryView(markdown);
+      this.appendComponent(active.summaryView);
+    } else {
+      active.summaryView.setMarkdown(markdown);
+    }
     this.tui.requestRender();
   }
 
@@ -351,14 +371,18 @@ export class SubtextApp extends Container {
     this.tui.requestRender();
   }
 
-  private renderVideoOutcome(outcome: VideoProcessingOutcome, transcriptRendered: boolean): void {
+  private renderVideoOutcome(
+    outcome: VideoProcessingOutcome,
+    transcriptRendered: boolean,
+    active: ActiveProcessing,
+  ): void {
     switch (outcome.status) {
       case "completed": {
         this.latestTranscriptVideoId = outcome.transcript.video.id;
         if (!transcriptRendered) {
           this.appendTranscript(outcome.transcript);
         }
-        this.appendComponent(new SummaryView(outcome.summaryMarkdown));
+        this.renderCompletedSummary(outcome.summaryMarkdown, active);
         this.setStatus(
           outcome.reusedTranscript && outcome.reusedSummary
             ? "Loaded the existing Transcript and Summary from the Artifact Library."
@@ -441,6 +465,7 @@ export class SubtextApp extends Container {
         regenerate: true,
         signal: active.controller.signal,
         onStage: (stage) => this.renderProcessingStage(stage, active),
+        onSummaryUpdate: (markdown) => this.renderSummaryUpdate(markdown, active),
       });
     } catch (error) {
       if (active.controller.signal.aborted) {
@@ -459,15 +484,15 @@ export class SubtextApp extends Container {
       return;
     }
     active.stageView.finish(summaryOutcomeTone(outcome));
-    this.renderSummaryOutcome(outcome);
+    this.renderSummaryOutcome(outcome, active);
     this.restoreEditorFocus();
     this.tui.requestRender();
   }
 
-  private renderSummaryOutcome(outcome: SummaryProcessingOutcome): void {
+  private renderSummaryOutcome(outcome: SummaryProcessingOutcome, active: ActiveProcessing): void {
     switch (outcome.status) {
       case "completed": {
-        this.appendComponent(new SummaryView(outcome.summaryMarkdown));
+        this.renderCompletedSummary(outcome.summaryMarkdown, active);
         this.setStatus(
           outcome.reused ? "Loaded the existing Summary." : "Summary completed.",
           "success",
@@ -503,6 +528,7 @@ export class SubtextApp extends Container {
       cancellationRequested: false,
       transcriptRendered: false,
       transcriptDraftView: null,
+      summaryView: null,
       stageView,
     };
     this.appendComponent(stageView);
@@ -822,6 +848,14 @@ export class SubtextApp extends Container {
 
   private appendMessage(message: string, messageTone?: UiTone): void {
     this.appendComponent(new StatusLine(message, messageTone ?? "muted"));
+  }
+
+  private renderCompletedSummary(markdown: string, active: ActiveProcessing): void {
+    if (active.summaryView === null) {
+      this.appendComponent(new SummaryView(markdown));
+    } else {
+      active.summaryView.setMarkdown(markdown);
+    }
   }
 
   private appendTranscript(transcript: TranscriptReady["transcript"]): void {

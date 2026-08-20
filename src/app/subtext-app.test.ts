@@ -271,7 +271,7 @@ describe("SubtextApp", () => {
     app.stop();
   });
 
-  it("prints the Transcript before Summary generation finishes", async () => {
+  it("streams the Summary before generation finishes", async () => {
     const processing = new DelayedSummaryProcessing();
     const terminal = new FakeTerminal();
     const tui: TUI = new TuiMainScreen(terminal);
@@ -285,6 +285,8 @@ describe("SubtextApp", () => {
       expect(renderedText(app)).toContain("▶ Transcript · EN · Creator Captions · Ctrl+O expand"),
     );
     expect(renderedText(app)).not.toContain("The opening idea.");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Streaming Summary"));
+    expect(renderedText(app)).toContain("A partial grounded idea.");
     expect(renderedText(app)).not.toContain("Overview");
 
     terminal.send("\u000f");
@@ -293,6 +295,7 @@ describe("SubtextApp", () => {
     processing.completeSummary();
 
     await vi.waitFor(() => expect(renderedText(app)).toContain("Overview"));
+    expect(renderedText(app)).not.toContain("Streaming Summary");
     app.stop();
   });
 
@@ -942,6 +945,7 @@ class DelayedSummaryProcessing implements SourceVideoProcessing {
       reused: false,
     });
     options.onStage?.("generating-summary");
+    options.onSummaryUpdate?.("# Streaming Summary\n\nA partial grounded idea.");
     return new Promise((resolve) => {
       this.finish = resolve;
     });

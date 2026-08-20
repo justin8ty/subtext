@@ -43,6 +43,23 @@ describe("PiAiTranscriptSummarizer", () => {
     }
   });
 
+  it("streams accumulated Markdown updates while generating the final Summary", async () => {
+    const faux = fauxProvider();
+    const models = createModels();
+    models.setProvider(faux.provider);
+    faux.setResponses([fauxAssistantMessage(SUMMARY)]);
+    const updates: string[] = [];
+    const summarizer = new PiAiTranscriptSummarizer(models, faux.getModel());
+
+    const summary = await summarizer.summarize(transcript(), {
+      onUpdate: (markdown) => updates.push(markdown),
+    });
+
+    expect(updates.length).toBeGreaterThan(0);
+    expect(updates.at(-1)?.trim()).toBe(SUMMARY.trim());
+    expect(summary).toBe(SUMMARY);
+  });
+
   it("applies the selected Summary detail to the final request", async () => {
     const faux = fauxProvider();
     const models = createModels();
@@ -192,7 +209,9 @@ describe("PiAiTranscriptSummarizer", () => {
     controller.abort();
     const summarizer = new PiAiTranscriptSummarizer(models, faux.getModel());
 
-    await expect(summarizer.summarize(transcript(), controller.signal)).rejects.toMatchObject({
+    await expect(
+      summarizer.summarize(transcript(), { signal: controller.signal }),
+    ).rejects.toMatchObject({
       kind: "cancelled",
     });
     expect(faux.state.callCount).toBe(0);

@@ -1,4 +1,11 @@
-import type { Api, Context, Model, Models, ModelsSimpleStreamOptions } from "@earendil-works/pi-ai";
+import type {
+  Api,
+  AssistantMessage,
+  Context,
+  Model,
+  Models,
+  ModelsSimpleStreamOptions,
+} from "@earendil-works/pi-ai";
 
 import type { SummaryDetail } from "../config/application-settings.js";
 import type { Transcript, TranscriptSegment } from "../transcript/model.js";
@@ -31,8 +38,13 @@ export class SummaryGenerationError extends Error {
   }
 }
 
+export interface SummaryGenerationOptions {
+  readonly signal?: AbortSignal;
+  readonly onUpdate?: (markdown: string) => void;
+}
+
 export interface TranscriptSummarizer {
-  summarize(transcript: Transcript, signal?: AbortSignal): Promise<string>;
+  summarize(transcript: Transcript, options?: SummaryGenerationOptions): Promise<string>;
 }
 
 export class PiAiTranscriptSummarizer implements TranscriptSummarizer {
@@ -53,8 +65,8 @@ export class PiAiTranscriptSummarizer implements TranscriptSummarizer {
     this.instructions = instructions.trim();
   }
 
-  async summarize(transcript: Transcript, signal?: AbortSignal): Promise<string> {
-    throwIfAborted(signal);
+  async summarize(transcript: Transcript, options: SummaryGenerationOptions = {}): Promise<string> {
+    throwIfAborted(options.signal);
     const outputTokens = summaryOutputTokens(this.model);
     const inputTokens = summaryInputTokens(
       this.model,
@@ -69,16 +81,17 @@ export class PiAiTranscriptSummarizer implements TranscriptSummarizer {
       const chunks = chunkText(sourceMaterial, inputTokens);
       const notes: string[] = [];
       for (const chunk of chunks) {
-        notes.push(await this.summarizeChunk(chunk, outputTokens, signal));
+        notes.push(await this.summarizeChunk(chunk, outputTokens, options.signal));
       }
-      sourceMaterial = await this.reduceNotes(notes, inputTokens, outputTokens, signal);
+      sourceMaterial = await this.reduceNotes(notes, inputTokens, outputTokens, options.signal);
     }
 
     const markdown = await this.request(
       finalSummaryInstruction(this.detail, this.instructions),
       sourceMaterial,
       outputTokens,
-      signal,
+      options.signal,
+      options.onUpdate,
     );
     return `${markdown.trim()}\n`;
   }
@@ -125,6 +138,7 @@ export class PiAiTranscriptSummarizer implements TranscriptSummarizer {
     sourceMaterial: string,
     maxTokens: number,
     signal?: AbortSignal,
+    onUpdate?: (markdown: string) => void,
   ): Promise<string> {
     throwIfAborted(signal);
     const context: Context = {
@@ -141,7 +155,16 @@ export class PiAiTranscriptSummarizer implements TranscriptSummarizer {
     if (signal !== undefined) {
       options.signal = signal;
     }
-    const response = await this.models.completeSimple(this.model, context, options);
+    const stream = this.models.streamSimple(this.model, context, options);
+    for await (const event of stream) {
+      if (event.type === "text_delta") {
+        const markdown = textContent(event.partial).trimStart();
+        if (markdown !== "") {
+          onUpdate?.(markdown);
+        }
+      }
+    }
+    const response = await stream.result();
 
     if (response.stopReason === "aborted" || signal?.aborted === true) {
       throw new SummaryGenerationError("cancelled", "Summary generation was cancelled.");
@@ -153,11 +176,7 @@ export class PiAiTranscriptSummarizer implements TranscriptSummarizer {
       );
     }
 
-    const text = response.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("\n")
-      .trim();
+    const text = textContent(response).trim();
     if (text === "") {
       throw new SummaryGenerationError("empty-response", "The Summary model returned no text.");
     }
@@ -306,6 +325,13 @@ function chunkItems(items: readonly string[], maximumTokens: number): string[][]
     groups.push(current);
   }
   return groups;
+}
+
+function textContent(message: AssistantMessage): string {
+  return message.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("\n");
 }
 
 function throwIfAborted(signal?: AbortSignal): void {

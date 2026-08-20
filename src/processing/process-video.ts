@@ -3,9 +3,14 @@ import { ArtifactLibrary, ArtifactLibraryError } from "../artifacts/artifact-lib
 import type { ProcessingStageOptions } from "./processing-stage.js";
 import {
   SummaryGenerationError,
+  type SummaryGenerationOptions,
   type TranscriptSummarizer,
 } from "../summary/transcript-summarizer.js";
 import type { Transcript } from "../transcript/model.js";
+
+type MutableSummaryGenerationOptions = {
+  -readonly [Key in keyof SummaryGenerationOptions]: SummaryGenerationOptions[Key];
+};
 
 interface CompletedVideoProcessing {
   readonly status: "completed";
@@ -41,11 +46,13 @@ export interface TranscriptReady {
 
 export interface VideoProcessingOptions extends AcquisitionOptions {
   readonly onTranscript?: (ready: TranscriptReady) => void;
+  readonly onSummaryUpdate?: (markdown: string) => void;
 }
 
 export interface SummaryProcessingOptions extends ProcessingStageOptions {
   readonly regenerate?: boolean;
   readonly signal?: AbortSignal;
+  readonly onSummaryUpdate?: (markdown: string) => void;
 }
 
 export type SummaryProcessingOutcome =
@@ -131,7 +138,10 @@ export class VideoProcessor {
 
     try {
       options.onStage?.("generating-summary");
-      const summaryMarkdown = await summarizer.summarize(acquisition.transcript, options.signal);
+      const summaryMarkdown = await summarizer.summarize(
+        acquisition.transcript,
+        summaryGenerationOptions(options),
+      );
       const storedSummary = await this.library.commitSummary(
         acquisition.transcript.video.id,
         acquisition.artifactRevision,
@@ -187,7 +197,7 @@ export class VideoProcessor {
       options.onStage?.("generating-summary");
       const summaryMarkdown = await summarizer.summarize(
         storedTranscript.transcript,
-        options.signal,
+        summaryGenerationOptions(options),
       );
       const storedSummary = await this.library.commitSummary(
         videoId,
@@ -260,6 +270,20 @@ function unsummarizedFromError(
     summaryStatus: "failed",
     message: failure.message,
   };
+}
+
+function summaryGenerationOptions(options: {
+  readonly signal?: AbortSignal;
+  readonly onSummaryUpdate?: (markdown: string) => void;
+}): SummaryGenerationOptions {
+  const generationOptions: MutableSummaryGenerationOptions = {};
+  if (options.signal !== undefined) {
+    generationOptions.signal = options.signal;
+  }
+  if (options.onSummaryUpdate !== undefined) {
+    generationOptions.onUpdate = options.onSummaryUpdate;
+  }
+  return generationOptions;
 }
 
 function signalIsAborted(signal?: AbortSignal): boolean {

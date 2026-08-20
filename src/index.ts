@@ -93,6 +93,7 @@ export {
   SummaryGenerationError,
   UnconfiguredTranscriptSummarizer,
   type SummaryGenerationErrorKind,
+  type SummaryGenerationOptions,
   type TranscriptSummarizer,
 } from "./summary/transcript-summarizer.js";
 export {
