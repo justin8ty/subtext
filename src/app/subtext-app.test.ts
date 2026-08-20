@@ -234,6 +234,31 @@ describe("SubtextApp", () => {
     app.stop();
   });
 
+  it("keeps App Command Completion available during active processing", async () => {
+    const processing = new AbortableProcessing();
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(tui, processing);
+    app.start();
+
+    typeText(terminal, SOURCE_URL);
+    terminal.send("\r");
+    await vi.waitFor(() => expect(processing.calls).toBe(1));
+
+    terminal.send("/");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Browse completed Video Artifacts"));
+    terminal.send("\u001b");
+    expect(processing.signal?.aborted).toBe(false);
+
+    typeText(terminal, "help");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("→ Help"));
+    terminal.send("\r");
+
+    expect(tui.hasOverlay()).toBe(true);
+    expect(processing.signal?.aborted).toBe(false);
+    app.stop();
+  });
+
   it("marks a cancelled Summary incomplete while retaining the Transcript", async () => {
     const processing = new ImmediateProcessing({
       status: "unsummarized",
@@ -329,6 +354,7 @@ describe("SubtextApp", () => {
 
     terminal.send("/");
     terminal.send("l");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("→ Library"));
     terminal.send("\r");
 
     await vi.waitFor(() => expect(library.listCalls).toBe(1));
@@ -351,7 +377,7 @@ describe("SubtextApp", () => {
     const app = new SubtextApp(tui, processing, { library });
     app.start();
 
-    await selectLibraryAction(terminal, tui, library, 1);
+    await selectLibraryAction(app, terminal, tui, library, 1);
 
     await vi.waitFor(() => expect(processing.summaryCalls).toBe(1));
     expect(processing.summaryVideoId).toBe(VIDEO_ID);
@@ -374,7 +400,7 @@ describe("SubtextApp", () => {
     );
     app.start();
 
-    await selectLibraryAction(terminal, tui, library, 2);
+    await selectLibraryAction(app, terminal, tui, library, 2);
     terminal.send("\u001b[B");
     terminal.send("\u001b[B");
     terminal.send("\u001b[B");
@@ -403,9 +429,9 @@ describe("SubtextApp", () => {
     );
     app.start();
 
-    await selectLibraryAction(terminal, tui, library, 3);
+    await selectLibraryAction(app, terminal, tui, library, 3);
     await vi.waitFor(() => expect(opener.targets).toEqual([SOURCE_URL]));
-    await selectLibraryAction(terminal, tui, library, 4);
+    await selectLibraryAction(app, terminal, tui, library, 4);
     await vi.waitFor(() => expect(opener.targets).toEqual([SOURCE_URL, "/tmp/subtext-artifacts"]));
     app.stop();
   });
@@ -422,7 +448,7 @@ describe("SubtextApp", () => {
     const app = new SubtextApp(tui, processing, { library });
     app.start();
 
-    await selectLibraryAction(terminal, tui, library, 5);
+    await selectLibraryAction(app, terminal, tui, library, 5);
 
     await vi.waitFor(() => expect(processing.calls).toBe(1));
     expect(processing.options?.refresh).toBe(true);
@@ -444,12 +470,12 @@ describe("SubtextApp", () => {
     );
     app.start();
 
-    await selectLibraryAction(terminal, tui, library, 6);
+    await selectLibraryAction(app, terminal, tui, library, 6);
     expect(library.deleteCalls).toBe(0);
     terminal.send("n");
     expect(library.deleteCalls).toBe(0);
 
-    await selectLibraryAction(terminal, tui, library, 6);
+    await selectLibraryAction(app, terminal, tui, library, 6);
     terminal.send("y");
 
     await vi.waitFor(() => expect(library.deleteCalls).toBe(1));
@@ -457,7 +483,7 @@ describe("SubtextApp", () => {
     app.stop();
   });
 
-  it("opens the searchable palette and can quit through a filtered result", () => {
+  it("shows App Command Completion below the editor and fuzzy-matches search aliases", async () => {
     const terminal = new FakeTerminal();
     const tui: TUI = new TuiMainScreen(terminal);
     const app = new SubtextApp(
@@ -467,15 +493,24 @@ describe("SubtextApp", () => {
         reason: "invalid-source-url",
         message: "Enter a URL.",
       }),
+      { configuration: configuredApplication() },
     );
     app.start();
 
     terminal.send("/");
-    expect(tui.hasOverlay()).toBe(true);
-    terminal.send("q");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Browse completed Video Artifacts"));
+    expect(renderedText(app)).toContain("Configure Summary and ASR preferences");
+    expect(tui.hasOverlay()).toBe(false);
+
+    typeText(terminal, "set");
+    await vi.waitFor(() => expect(renderedText(app)).toContain("→ Options"));
     terminal.send("\r");
 
-    expect(terminal.stopped).toBe(true);
+    expect(tui.hasOverlay()).toBe(true);
+    await vi.waitFor(() =>
+      expect(stripTerminalSequences(terminal.writes.join(""))).toContain("Subtext Options"),
+    );
+    app.stop();
   });
 });
 
@@ -728,6 +763,7 @@ function renderedText(app: SubtextApp): string {
 }
 
 async function selectLibraryAction(
+  app: SubtextApp,
   terminal: FakeTerminal,
   tui: TUI,
   library: FixtureArtifactLibrary,
@@ -736,6 +772,7 @@ async function selectLibraryAction(
   const expectedListCalls = library.listCalls + 1;
   terminal.send("/");
   terminal.send("l");
+  await vi.waitFor(() => expect(renderedText(app)).toContain("→ Library"));
   terminal.send("\r");
   await vi.waitFor(() => expect(library.listCalls).toBe(expectedListCalls));
   await vi.waitFor(() => expect(tui.hasOverlay()).toBe(true));

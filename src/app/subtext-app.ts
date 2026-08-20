@@ -27,7 +27,13 @@ import type {
   VideoProcessingOptions,
   VideoProcessingOutcome,
 } from "../processing/process-video.js";
+import {
+  AppCommandCompletion,
+  resolveAppCommand,
+  type AppCommandDestination,
+} from "./command-completion.js";
 import { ConfigurationWizard } from "./configuration-wizard.js";
+import { HelpOverlay } from "./help-overlay.js";
 import {
   DeleteConfirmationOverlay,
   LibraryActionsOverlay,
@@ -35,7 +41,6 @@ import {
   TranscriptExportOverlay,
   type LibraryAction,
 } from "./library-overlay.js";
-import { HelpOverlay, Palette, type PaletteDestination } from "./palette.js";
 import { SummaryView } from "./summary-view.js";
 import { TranscriptDraftView } from "./transcript-draft-view.js";
 import { TranscriptView } from "./transcript-view.js";
@@ -100,6 +105,7 @@ export class SubtextApp extends Container {
     this.library = options.library;
     this.externalOpener = options.externalOpener;
     this.editor = new Editor(tui, EDITOR_THEME, { paddingX: 1, autocompleteMaxVisible: 4 });
+    this.editor.setAutocompleteProvider(new AppCommandCompletion());
     this.editor.onSubmit = (sourceUrl) => this.submit(sourceUrl);
 
     this.addChild(new Text("Subtext", 0, 0));
@@ -108,7 +114,9 @@ export class SubtextApp extends Container {
     this.addChild(this.history);
     this.addChild(this.status);
     this.addChild(this.editor);
-    this.addChild(new Text("/ palette · R regenerate Summary · Esc cancel · Ctrl+C quit", 0, 0));
+    this.addChild(
+      new Text("/ App Commands · R regenerate Summary · Esc cancel · Ctrl+C quit", 0, 0),
+    );
   }
 
   start(): void {
@@ -159,22 +167,25 @@ export class SubtextApp extends Container {
       return undefined;
     }
 
-    if (data === "/" && this.editor.getText().trim() === "") {
-      this.openPalette();
-      return { consume: true };
-    }
-
     if (data === "R" && this.editor.getText().trim() === "" && this.activeProcessing === null) {
       this.regenerateLatestSummary();
       return { consume: true };
     }
 
-    if (this.activeProcessing !== null && matchesKey(data, Key.escape)) {
+    if (
+      this.activeProcessing !== null &&
+      matchesKey(data, Key.escape) &&
+      !this.editor.isShowingAutocomplete()
+    ) {
       this.cancelActiveProcessing();
       return { consume: true };
     }
 
-    if (this.activeProcessing !== null && matchesKey(data, Key.enter)) {
+    if (
+      this.activeProcessing !== null &&
+      matchesKey(data, Key.enter) &&
+      !this.editor.getText().trimStart().startsWith("/")
+    ) {
       this.appendMessage("Another Source Video cannot be submitted while processing is active.");
       this.tui.requestRender();
       return { consume: true };
@@ -185,6 +196,16 @@ export class SubtextApp extends Container {
 
   private submit(sourceUrl: string): void {
     const normalizedUrl = sourceUrl.trim();
+    const command = resolveAppCommand(normalizedUrl);
+    if (command !== null) {
+      this.selectAppCommand(command);
+      return;
+    }
+    if (normalizedUrl.startsWith("/")) {
+      this.status.setText("Unknown App Command. Type / to list available commands.");
+      this.tui.requestRender();
+      return;
+    }
     if (normalizedUrl === "") {
       this.status.setText("Enter a YouTube URL.");
       this.tui.requestRender();
@@ -476,24 +497,7 @@ export class SubtextApp extends Container {
     }
   }
 
-  private openPalette(): void {
-    let handle: OverlayHandle;
-    const close = (): void => handle.hide();
-    const select = (destination: PaletteDestination): void => {
-      close();
-      this.selectPaletteDestination(destination);
-    };
-    const palette = new Palette(this.tui, select, close);
-    handle = this.tui.showOverlay(palette, {
-      width: "70%",
-      minWidth: 32,
-      maxHeight: 10,
-      margin: 1,
-    });
-    this.tui.requestRender();
-  }
-
-  private selectPaletteDestination(destination: PaletteDestination): void {
+  private selectAppCommand(destination: AppCommandDestination): void {
     if (destination === "quit") {
       this.stop();
       return;
