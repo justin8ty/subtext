@@ -78,6 +78,7 @@ describe("VideoProcessor", () => {
 
     const first = await processor.process(TRANSCRIPT.video.canonicalUrl, {
       onTranscript: () => events.push("transcript"),
+      onStage: (stage) => events.push(stage),
     });
 
     expect(first).toMatchObject({
@@ -85,7 +86,7 @@ describe("VideoProcessor", () => {
       reusedTranscript: false,
       reusedSummary: false,
     });
-    expect(events).toEqual(["transcript", "summary"]);
+    expect(events).toEqual(["transcript", "generating-summary", "summary"]);
     if (first.status !== "completed") {
       return;
     }
@@ -93,13 +94,16 @@ describe("VideoProcessor", () => {
       SUMMARY,
     );
 
-    const second = await processor.process(TRANSCRIPT.video.canonicalUrl);
+    const second = await processor.process(TRANSCRIPT.video.canonicalUrl, {
+      onStage: (stage) => events.push(stage),
+    });
     expect(second).toMatchObject({
       status: "completed",
       reusedTranscript: false,
       reusedSummary: true,
     });
     expect(summarizer.calls).toBe(1);
+    expect(events).toEqual(["transcript", "generating-summary", "summary"]);
   });
 
   it("forwards streamed Transcript Draft segments before the completed Transcript", async () => {

@@ -1,5 +1,6 @@
 import type { AcquisitionOptions, AcquisitionOutcome } from "../acquisition/acquire-transcript.js";
 import { ArtifactLibrary, ArtifactLibraryError } from "../artifacts/artifact-library.js";
+import type { ProcessingStageOptions } from "./processing-stage.js";
 import {
   SummaryGenerationError,
   type TranscriptSummarizer,
@@ -42,7 +43,7 @@ export interface VideoProcessingOptions extends AcquisitionOptions {
   readonly onTranscript?: (ready: TranscriptReady) => void;
 }
 
-export interface SummaryProcessingOptions {
+export interface SummaryProcessingOptions extends ProcessingStageOptions {
   readonly regenerate?: boolean;
   readonly signal?: AbortSignal;
 }
@@ -129,6 +130,7 @@ export class VideoProcessor {
     }
 
     try {
+      options.onStage?.("generating-summary");
       const summaryMarkdown = await summarizer.summarize(acquisition.transcript, options.signal);
       const storedSummary = await this.library.commitSummary(
         acquisition.transcript.video.id,
@@ -182,6 +184,7 @@ export class VideoProcessor {
         }
       }
 
+      options.onStage?.("generating-summary");
       const summaryMarkdown = await summarizer.summarize(
         storedTranscript.transcript,
         options.signal,

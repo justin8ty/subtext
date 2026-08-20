@@ -10,7 +10,6 @@ import {
   type Component,
   type Focusable,
   type SelectItem,
-  type SelectListTheme,
   type TUI,
 } from "@earendil-works/pi-tui";
 
@@ -20,14 +19,7 @@ import type {
 } from "../config/application-configuration.js";
 import type { SummaryDetail } from "../config/application-settings.js";
 import type { AsrQuality } from "../runtime/runtime-manifest.js";
-
-const PLAIN_SELECT_THEME: SelectListTheme = {
-  selectedPrefix: identity,
-  selectedText: identity,
-  description: identity,
-  scrollInfo: identity,
-  noMatch: identity,
-};
+import { bold, dim, error, SELECT_THEME } from "./theme.js";
 
 type WizardStep = "provider" | "authentication" | "model" | "detail" | "asr" | "saving";
 type MutableConfigurationUpdate = {
@@ -99,7 +91,7 @@ export class ConfigurationWizard extends Container implements Focusable {
     const list = new SelectList(
       providers.map((provider) => ({ value: provider.id, label: provider.label })),
       Math.min(10, Math.max(1, providers.length)),
-      PLAIN_SELECT_THEME,
+      SELECT_THEME,
     );
     selectInitial(
       list,
@@ -141,7 +133,7 @@ export class ConfigurationWizard extends Container implements Focusable {
         description: model.description,
       })),
       Math.min(10, Math.max(1, models.length)),
-      PLAIN_SELECT_THEME,
+      SELECT_THEME,
     );
     selectInitial(
       list,
@@ -161,7 +153,7 @@ export class ConfigurationWizard extends Container implements Focusable {
       { value: "standard", label: "Standard", description: "Balanced default" },
       { value: "detailed", label: "Detailed", description: "More complete supporting detail" },
     ];
-    const list = new SelectList([...items], items.length, PLAIN_SELECT_THEME);
+    const list = new SelectList([...items], items.length, SELECT_THEME);
     const current = this.configuration.current?.summaryDetail ?? "standard";
     selectInitial(
       list,
@@ -177,7 +169,7 @@ export class ConfigurationWizard extends Container implements Focusable {
       { value: "balanced", label: "Balanced", description: "large-v3-turbo; faster and smaller" },
       { value: "accurate", label: "Accurate", description: "large-v3; slower and about 3 GB" },
     ];
-    const list = new SelectList([...items], items.length, PLAIN_SELECT_THEME);
+    const list = new SelectList([...items], items.length, SELECT_THEME);
     const current = this.configuration.current?.asrQuality ?? "balanced";
     selectInitial(
       list,
@@ -219,15 +211,17 @@ export class ConfigurationWizard extends Container implements Focusable {
       component.focused = this._focused;
     }
     this.clear();
-    this.addChild(new Text(this.options.required ? "Set up Subtext" : "Subtext Options", 1, 0));
-    this.addChild(new Text(title, 1, 0));
+    this.addChild(
+      new Text(bold(this.options.required ? "Set up Subtext" : "Subtext Options"), 1, 0),
+    );
+    this.addChild(new Text(bold(title), 1, 0));
     if (this.message !== "") {
-      this.addChild(new Text(this.message, 1, 0));
+      this.addChild(new Text(error(this.message), 1, 0));
       this.message = "";
     }
     this.addChild(component);
     if (help !== "") {
-      this.addChild(new Text(help, 1, 0));
+      this.addChild(new Text(dim(help), 1, 0));
     }
     this.tui.requestRender();
   }
@@ -279,8 +273,4 @@ function parseSummaryDetail(value: string): SummaryDetail {
 
 function parseAsrQuality(value: string): AsrQuality {
   return value === "accurate" ? "accurate" : "balanced";
-}
-
-function identity(text: string): string {
-  return text;
 }

@@ -1,3 +1,4 @@
+import type { ProcessingStageOptions } from "../processing/processing-stage.js";
 import type { AsrQuality } from "../runtime/runtime-manifest.js";
 import type { TranscriptSegment } from "../transcript/model.js";
 
@@ -7,7 +8,7 @@ export interface AsrTranscript {
   readonly segments: readonly TranscriptSegment[];
 }
 
-export interface AsrTranscriptionOptions {
+export interface AsrTranscriptionOptions extends ProcessingStageOptions {
   readonly durationMs?: number;
   readonly languageCode?: string;
   readonly quality?: AsrQuality;

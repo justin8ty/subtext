@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-tui";
 
 import type { Transcript, TranscriptSegment } from "../transcript/model.js";
+import { accent, bold, dim } from "./theme.js";
 
 export class TranscriptView implements Component {
   readonly transcript: Transcript;
@@ -21,8 +22,8 @@ export class TranscriptView implements Component {
     }
 
     const lines = [
-      ...wrapTextWithAnsi(this.transcript.video.title, width),
-      `Transcript · ${this.transcript.languageCode} · ${provenanceLabel(this.transcript)}`,
+      ...wrapTextWithAnsi(bold(this.transcript.video.title), width),
+      dim(`Transcript · ${this.transcript.languageCode} · ${provenanceLabel(this.transcript)}`),
       "",
     ];
     const fittedHeader = lines.flatMap((line) =>
@@ -47,7 +48,7 @@ export function renderTimestampedSegment(
   const timestamp = formatTimestamp(segment.startMs);
   const seconds = Math.floor(segment.startMs / 1_000);
   const separator = canonicalUrl.includes("?") ? "&" : "?";
-  const linkedTimestamp = hyperlink(timestamp, `${canonicalUrl}${separator}t=${seconds}s`);
+  const linkedTimestamp = hyperlink(accent(timestamp), `${canonicalUrl}${separator}t=${seconds}s`);
   const prefixWidth = visibleWidth(timestamp) + 1;
 
   if (width <= prefixWidth) {

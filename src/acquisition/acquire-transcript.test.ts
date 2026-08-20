@@ -48,8 +48,11 @@ describe("TranscriptAcquirer", () => {
     );
     const library = new ArtifactLibrary(await temporaryLibrary());
     const acquirer = new TranscriptAcquirer(youtube, new UnusedAsrAdapter(), library);
+    const stages: string[] = [];
 
-    const first = await acquirer.acquire(`https://youtu.be/${VIDEO_ID}`);
+    const first = await acquirer.acquire(`https://youtu.be/${VIDEO_ID}`, {
+      onStage: (stage) => stages.push(stage),
+    });
     expect(first.status).toBe("completed");
     if (first.status !== "completed") {
       return;
@@ -73,6 +76,7 @@ describe("TranscriptAcquirer", () => {
       expect(reused.artifactDirectory).toBe(first.artifactDirectory);
     }
     expect(youtube.inspectionCount).toBe(1);
+    expect(stages).toEqual(["inspecting-video", "preparing-caption-transcript"]);
   });
 
   it("replaces the current revision only after a refreshed Transcript is complete", async () => {
@@ -173,7 +177,7 @@ describe("TranscriptAcquirer", () => {
 
     const outcome = await acquirer.acquire(`https://www.youtube.com/watch?v=${VIDEO_ID}`, {
       asrQuality: "accurate",
-      onAsrFallback: () => events.push("fallback"),
+      onStage: (stage) => events.push(stage),
       onTranscriptDraft: (draft) => drafts.push(draft.segment.text),
     });
 
@@ -185,7 +189,16 @@ describe("TranscriptAcquirer", () => {
         provenance: { origin: "asr", languageCode: "es", model: "large-v3-turbo" },
       },
     });
-    expect(events).toEqual(["fallback", "audio", "asr"]);
+    expect(events).toEqual([
+      "inspecting-video",
+      "no-eligible-caption",
+      "switching-to-asr",
+      "downloading-default-audio",
+      "audio",
+      "preparing-runtime",
+      "transcribing-whisper",
+      "asr",
+    ]);
     expect(drafts).toEqual(["ASR opening", "ASR ending"]);
     expect(asr.receivedLanguageCode).toBeUndefined();
     expect(asr.receivedDurationMs).toBe(10_000);
@@ -339,6 +352,8 @@ class ScriptedAsrAdapter implements AsrAdapter {
     _audioPath: string,
     options: AsrTranscriptionOptions = {},
   ): Promise<AsrTranscript> {
+    options.onStage?.("preparing-runtime");
+    options.onStage?.("transcribing-whisper");
     this.events?.push("asr");
     this.receivedDurationMs = options.durationMs;
     this.receivedLanguageCode = options.languageCode;

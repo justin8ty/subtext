@@ -7,20 +7,12 @@ import {
   matchesKey,
   type Focusable,
   type SelectItem,
-  type SelectListTheme,
   type TUI,
 } from "@earendil-works/pi-tui";
 
 import type { ArtifactLibraryEntry } from "../artifacts/artifact-library.js";
 import type { TranscriptExportFormat } from "../artifacts/transcript-export.js";
-
-const PLAIN_SELECT_THEME: SelectListTheme = {
-  selectedPrefix: identity,
-  selectedText: identity,
-  description: identity,
-  scrollInfo: identity,
-  noMatch: identity,
-};
+import { bold, dim, SELECT_THEME, warning } from "./theme.js";
 
 export type LibraryAction =
   | "print"
@@ -51,17 +43,13 @@ export class LibraryView extends Container implements Focusable {
     this.selectEntry = selectEntry;
     this.cancel = cancel;
     this.entriesByVideoId = new Map(entries.map((entry) => [entry.videoId, entry]));
-    this.list = new SelectList(
-      entries.map(entryItem),
-      Math.min(10, entries.length),
-      PLAIN_SELECT_THEME,
-    );
+    this.list = new SelectList(entries.map(entryItem), Math.min(10, entries.length), SELECT_THEME);
 
-    this.addChild(new Text("Artifact Library", 1, 0));
-    this.addChild(new Text("Search", 1, 0));
+    this.addChild(new Text(bold("Artifact Library"), 1, 0));
+    this.addChild(new Text(dim("Search"), 1, 0));
     this.addChild(this.query);
     this.addChild(this.list);
-    this.addChild(new Text("↑↓ navigate · enter actions · esc close", 1, 0));
+    this.addChild(new Text(dim("↑↓ navigate · enter actions · esc close"), 1, 0));
 
     this.list.onSelect = (item) => {
       const entry = this.entriesByVideoId.get(item.value);
@@ -122,7 +110,7 @@ class MenuView<Value extends string> extends Container {
     for (const item of items) {
       values.set(item.value, item.value);
     }
-    this.list = new SelectList([...items], items.length, PLAIN_SELECT_THEME);
+    this.list = new SelectList([...items], items.length, SELECT_THEME);
     this.list.onSelect = (item) => {
       const value = values.get(item.value);
       if (value !== undefined) {
@@ -130,9 +118,9 @@ class MenuView<Value extends string> extends Container {
       }
     };
     this.list.onCancel = cancel;
-    this.addChild(new Text(title, 1, 0));
+    this.addChild(new Text(bold(title), 1, 0));
     this.addChild(this.list);
-    this.addChild(new Text("↑↓ navigate · enter select · esc close", 1, 0));
+    this.addChild(new Text(dim("↑↓ navigate · enter select · esc close"), 1, 0));
   }
 
   handleInput(data: string): void {
@@ -211,12 +199,12 @@ export class DeleteConfirmationView extends Container {
     super();
     this.confirm = confirm;
     this.cancel = cancel;
-    this.addChild(new Text("Delete Video Artifacts?", 1, 0));
-    this.addChild(new Text(entry.title, 1, 0));
+    this.addChild(new Text(warning("Delete Video Artifacts?"), 1, 0));
+    this.addChild(new Text(bold(entry.title), 1, 0));
     this.addChild(
-      new Text("This deletes the Transcript, source evidence, Summary, and exports.", 1, 0),
+      new Text(dim("This deletes the Transcript, source evidence, Summary, and exports."), 1, 0),
     );
-    this.addChild(new Text("Y delete · N or esc cancel", 1, 0));
+    this.addChild(new Text(dim("Y delete · N or esc cancel"), 1, 0));
   }
 
   handleInput(data: string): void {
@@ -246,8 +234,4 @@ function originLabel(origin: ArtifactLibraryEntry["transcriptOrigin"]): string {
     return "automatic captions";
   }
   return "ASR";
-}
-
-function identity(text: string): string {
-  return text;
 }

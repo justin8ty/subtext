@@ -1,6 +1,7 @@
 import { wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
 
 import type { SourceVideoRecord, Transcript, TranscriptSegment } from "../transcript/model.js";
+import { bold, dim } from "./theme.js";
 import { TranscriptView, renderTimestampedSegment } from "./transcript-view.js";
 
 export class TranscriptDraftView implements Component {
@@ -31,8 +32,8 @@ export class TranscriptDraftView implements Component {
     }
 
     return [
-      ...wrapTextWithAnsi(this.video.title, width),
-      ...wrapTextWithAnsi("Transcript Draft · ASR · incomplete", width),
+      ...wrapTextWithAnsi(bold(this.video.title), width),
+      ...wrapTextWithAnsi(dim("Transcript Draft · ASR · incomplete"), width),
       "",
       ...this.segments.flatMap((segment) =>
         renderTimestampedSegment(segment, this.video.canonicalUrl, width),

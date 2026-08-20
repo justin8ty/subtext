@@ -6,8 +6,6 @@ import {
   Text,
   matchesKey,
   type Component,
-  type EditorTheme,
-  type SelectListTheme,
   type TUI,
   type TuiInputListenerResult,
 } from "@earendil-works/pi-tui";
@@ -41,7 +39,9 @@ import {
   TranscriptExportView,
   type LibraryAction,
 } from "./library-view.js";
+import { ProcessingStatusView } from "./processing-status-view.js";
 import { SummaryView } from "./summary-view.js";
+import { active, dim, EDITOR_THEME, keyHint, tone, type UiTone } from "./theme.js";
 import { TranscriptDraftView } from "./transcript-draft-view.js";
 import { TranscriptView } from "./transcript-view.js";
 
@@ -67,20 +67,8 @@ interface ActiveProcessing {
   cancellationRequested: boolean;
   transcriptRendered: boolean;
   transcriptDraftView: TranscriptDraftView | null;
+  readonly stageView: ProcessingStatusView;
 }
-
-const PLAIN_SELECT_THEME: SelectListTheme = {
-  selectedPrefix: identity,
-  selectedText: identity,
-  description: identity,
-  scrollInfo: identity,
-  noMatch: identity,
-};
-
-const EDITOR_THEME: EditorTheme = {
-  borderColor: identity,
-  selectList: PLAIN_SELECT_THEME,
-};
 
 export class SubtextApp extends Container {
   private readonly tui: TUI;
@@ -89,7 +77,7 @@ export class SubtextApp extends Container {
   private readonly library: ArtifactLibraryAccess | undefined;
   private readonly externalOpener: ExternalOpener | undefined;
   private readonly history = new Container();
-  private readonly status = new Text("Ready. Paste a YouTube URL and press Enter.", 0, 0);
+  private readonly status = new Text(dim("Ready. Paste a YouTube URL and press Enter."), 0, 0);
   private readonly editor: Editor;
   private readonly commandPanel = new Container();
   private removeInputListener: (() => void) | null = null;
@@ -109,15 +97,24 @@ export class SubtextApp extends Container {
     this.editor.setAutocompleteProvider(new AppCommandCompletion());
     this.editor.onSubmit = (sourceUrl) => this.submit(sourceUrl);
 
-    this.addChild(new Text("Subtext", 0, 0));
-    this.addChild(new Text("Understand a YouTube video without watching it.", 0, 0));
+    this.addChild(new Text(active("Subtext"), 0, 0));
+    this.addChild(new Text(dim("Understand a YouTube video without watching it."), 0, 0));
     this.addChild(new Spacer(1));
     this.addChild(this.history);
     this.addChild(this.status);
     this.addChild(this.editor);
     this.addChild(this.commandPanel);
     this.addChild(
-      new Text("/ App Commands · R regenerate Summary · Esc cancel · Ctrl+C quit", 0, 0),
+      new Text(
+        keyHint([
+          ["/", "App Commands"],
+          ["R", "regenerate Summary"],
+          ["Esc", "cancel"],
+          ["Ctrl+C", "quit"],
+        ]),
+        0,
+        0,
+      ),
     );
   }
 
@@ -146,11 +143,15 @@ export class SubtextApp extends Container {
       const incompleteWork =
         this.activeProcessing.kind === "summary" ? "Summary generation" : "Transcript acquisition";
       this.activeProcessing.controller.abort();
-      this.appendMessage(`Incomplete — ${incompleteWork} cancelled because Subtext quit.`);
+      this.activeProcessing.stageView.finish("warning");
+      this.appendMessage(
+        `Incomplete — ${incompleteWork} cancelled because Subtext quit.`,
+        "warning",
+      );
       this.activeProcessing = null;
     }
 
-    this.status.setText("Stopped.");
+    this.setStatus("Stopped.", "muted");
     this.tui.renderNow();
     this.tui.stop();
   }
@@ -188,7 +189,10 @@ export class SubtextApp extends Container {
       matchesKey(data, Key.enter) &&
       !this.editor.getText().trimStart().startsWith("/")
     ) {
-      this.appendMessage("Another Source Video cannot be submitted while processing is active.");
+      this.appendMessage(
+        "Another Source Video cannot be submitted while processing is active.",
+        "warning",
+      );
       this.tui.requestRender();
       return { consume: true };
     }
@@ -204,12 +208,12 @@ export class SubtextApp extends Container {
       return;
     }
     if (normalizedUrl.startsWith("/")) {
-      this.status.setText("Unknown App Command. Type / to list available commands.");
+      this.setStatus("Unknown App Command. Type / to list available commands.", "warning");
       this.tui.requestRender();
       return;
     }
     if (normalizedUrl === "") {
-      this.status.setText("Enter a YouTube URL.");
+      this.setStatus("Enter a YouTube URL.", "warning");
       this.tui.requestRender();
       return;
     }
@@ -218,14 +222,17 @@ export class SubtextApp extends Container {
 
   private startVideoProcessing(sourceUrl: string, refresh: boolean): void {
     if (this.activeProcessing !== null) {
-      this.appendMessage("Another Source Video cannot be submitted while processing is active.");
+      this.appendMessage(
+        "Another Source Video cannot be submitted while processing is active.",
+        "warning",
+      );
       this.tui.requestRender();
       return;
     }
 
+    this.appendMessage(`${refresh ? "Refreshing" : "Source Video"}: ${sourceUrl}`, "muted");
     const active = this.beginProcessing("video");
-    this.appendMessage(`${refresh ? "Refreshing" : "Source Video"}: ${sourceUrl}`);
-    this.status.setText("Acquiring a Transcript, then generating its Summary… Esc cancels.");
+    this.setStatus("Starting Source Video processing… Esc cancels.", "muted");
     this.tui.requestRender();
     void this.processVideo(sourceUrl, active, refresh);
   }
@@ -239,7 +246,7 @@ export class SubtextApp extends Container {
     try {
       const processingOptions: MutableVideoProcessingOptions = {
         signal: active.controller.signal,
-        onAsrFallback: () => this.renderAsrFallback(active),
+        onStage: (stage) => this.renderProcessingStage(stage, active),
         onTranscript: (ready) => this.renderReadyTranscript(ready, active),
         onTranscriptDraft: (draft) => this.renderTranscriptDraft(draft, active),
       };
@@ -267,22 +274,21 @@ export class SubtextApp extends Container {
     if (!this.finishProcessing(active)) {
       return;
     }
+    active.stageView.finish(videoOutcomeTone(outcome));
     this.renderVideoOutcome(outcome, active.transcriptRendered);
     this.restoreEditorFocus();
     this.tui.requestRender();
   }
 
-  private renderAsrFallback(active: ActiveProcessing): void {
-    if (
-      this.stopped ||
-      this.activeProcessing?.id !== active.id ||
-      active.cancellationRequested ||
-      active.transcriptRendered
-    ) {
+  private renderProcessingStage(
+    stage: Parameters<NonNullable<VideoProcessingOptions["onStage"]>>[0],
+    active: ActiveProcessing,
+  ): void {
+    if (this.stopped || this.activeProcessing?.id !== active.id || active.cancellationRequested) {
       return;
     }
-    this.appendMessage("No Eligible Caption Track found. Switching to local ASR.");
-    this.status.setText("Preparing runtime and downloading Default Audio… Esc cancels.");
+    active.stageView.update(stage);
+    this.setStatus("Esc cancels active processing.", "muted");
     this.tui.requestRender();
   }
 
@@ -298,7 +304,7 @@ export class SubtextApp extends Container {
     if (active.transcriptDraftView === null) {
       active.transcriptDraftView = new TranscriptDraftView(draft.video);
       this.appendComponent(active.transcriptDraftView);
-      this.status.setText("Transcribing Default Audio locally… Esc cancels.");
+      this.setStatus("Esc cancels active processing.", "muted");
     }
     if (active.transcriptDraftView.video.id !== draft.video.id) {
       return;
@@ -318,10 +324,11 @@ export class SubtextApp extends Container {
     } else {
       active.transcriptDraftView.complete(ready.transcript);
     }
-    this.status.setText(
+    this.setStatus(
       ready.reused
-        ? "Loaded the existing Transcript. Generating its Summary…"
-        : "Transcript completed. Generating its Summary…",
+        ? "Loaded the existing Transcript. Checking for a current Summary…"
+        : "Transcript completed. Checking for a current Summary…",
+      ready.reused ? "muted" : "success",
     );
     this.tui.requestRender();
   }
@@ -334,10 +341,11 @@ export class SubtextApp extends Container {
           this.appendComponent(new TranscriptView(outcome.transcript));
         }
         this.appendComponent(new SummaryView(outcome.summaryMarkdown));
-        this.status.setText(
+        this.setStatus(
           outcome.reusedTranscript && outcome.reusedSummary
             ? "Loaded the existing Transcript and Summary from the Artifact Library."
             : "Transcript and Summary completed.",
+          "success",
         );
         return;
       }
@@ -350,33 +358,34 @@ export class SubtextApp extends Container {
           outcome.summaryStatus === "cancelled"
             ? `Incomplete — ${outcome.message}`
             : `Summary unavailable — ${outcome.message}`,
+          outcome.summaryStatus === "cancelled" ? "warning" : "error",
         );
-        this.status.setText("Transcript completed. Press R to retry Summary generation.");
+        this.setStatus("Transcript completed. Press R to retry Summary generation.", "warning");
         return;
       }
       case "needs-input": {
-        this.appendMessage(`Needs input — ${outcome.message}`);
-        this.status.setText("Ready for another URL.");
+        this.appendMessage(`Needs input — ${outcome.message}`, "warning");
+        this.setStatus("Ready for another URL.", "muted");
         return;
       }
       case "unavailable": {
-        this.appendMessage(`Unavailable — ${outcome.message}`);
-        this.status.setText("Ready for another URL.");
+        this.appendMessage(`Unavailable — ${outcome.message}`, "warning");
+        this.setStatus("Ready for another URL.", "muted");
         return;
       }
       case "blocked": {
-        this.appendMessage(`Blocked — ${outcome.message}`);
-        this.status.setText("Ready for another URL.");
+        this.appendMessage(`Blocked — ${outcome.message}`, "error");
+        this.setStatus("Ready for another URL.", "muted");
         return;
       }
       case "failed": {
-        this.appendMessage(`Failed — ${outcome.message}`);
-        this.status.setText("Ready for another URL.");
+        this.appendMessage(`Failed — ${outcome.message}`, "error");
+        this.setStatus("Ready for another URL.", "muted");
         return;
       }
       case "cancelled": {
-        this.appendMessage(`Incomplete — ${outcome.message}`);
-        this.status.setText("Ready for another URL.");
+        this.appendMessage(`Incomplete — ${outcome.message}`, "warning");
+        this.setStatus("Ready for another URL.", "muted");
       }
     }
   }
@@ -384,7 +393,7 @@ export class SubtextApp extends Container {
   private regenerateLatestSummary(): void {
     const videoId = this.latestTranscriptVideoId;
     if (videoId === null) {
-      this.status.setText("Process a Source Video before regenerating a Summary.");
+      this.setStatus("Process a Source Video before regenerating a Summary.", "warning");
       this.tui.requestRender();
       return;
     }
@@ -393,13 +402,16 @@ export class SubtextApp extends Container {
 
   private regenerateSummary(videoId: string): void {
     if (this.activeProcessing !== null) {
-      this.reportLibraryMessage("Summary generation cannot start while processing is active.");
+      this.reportLibraryMessage(
+        "Summary generation cannot start while processing is active.",
+        "warning",
+      );
       return;
     }
 
     this.latestTranscriptVideoId = videoId;
     const active = this.beginProcessing("summary");
-    this.status.setText("Generating a new Summary… Esc cancels.");
+    this.setStatus("Starting Summary generation… Esc cancels.", "muted");
     this.tui.requestRender();
     void this.processSummary(videoId, active);
   }
@@ -410,6 +422,7 @@ export class SubtextApp extends Container {
       outcome = await this.processing.summarize(videoId, {
         regenerate: true,
         signal: active.controller.signal,
+        onStage: (stage) => this.renderProcessingStage(stage, active),
       });
     } catch (error) {
       if (active.controller.signal.aborted) {
@@ -427,6 +440,7 @@ export class SubtextApp extends Container {
     if (!this.finishProcessing(active)) {
       return;
     }
+    active.stageView.finish(summaryOutcomeTone(outcome));
     this.renderSummaryOutcome(outcome);
     this.restoreEditorFocus();
     this.tui.requestRender();
@@ -436,27 +450,34 @@ export class SubtextApp extends Container {
     switch (outcome.status) {
       case "completed": {
         this.appendComponent(new SummaryView(outcome.summaryMarkdown));
-        this.status.setText(outcome.reused ? "Loaded the existing Summary." : "Summary completed.");
+        this.setStatus(
+          outcome.reused ? "Loaded the existing Summary." : "Summary completed.",
+          "success",
+        );
         return;
       }
       case "unavailable": {
-        this.appendMessage(`Summary unavailable — ${outcome.message}`);
-        this.status.setText("Ready for another URL.");
+        this.appendMessage(`Summary unavailable — ${outcome.message}`, "warning");
+        this.setStatus("Ready for another URL.", "muted");
         return;
       }
       case "failed": {
-        this.appendMessage(`Summary failed — ${outcome.message}`);
-        this.status.setText("The previous Summary, if any, remains available. Press R to retry.");
+        this.appendMessage(`Summary failed — ${outcome.message}`, "error");
+        this.setStatus(
+          "The previous Summary, if any, remains available. Press R to retry.",
+          "error",
+        );
         return;
       }
       case "cancelled": {
-        this.appendMessage(`Incomplete — ${outcome.message}`);
-        this.status.setText("The Transcript remains available. Press R to retry.");
+        this.appendMessage(`Incomplete — ${outcome.message}`, "warning");
+        this.setStatus("The Transcript remains available. Press R to retry.", "warning");
       }
     }
   }
 
   private beginProcessing(kind: ActiveProcessing["kind"]): ActiveProcessing {
+    const stageView = new ProcessingStatusView();
     const active: ActiveProcessing = {
       id: this.nextProcessingId,
       kind,
@@ -464,7 +485,9 @@ export class SubtextApp extends Container {
       cancellationRequested: false,
       transcriptRendered: false,
       transcriptDraftView: null,
+      stageView,
     };
+    this.appendComponent(stageView);
     this.nextProcessingId += 1;
     this.activeProcessing = active;
     return active;
@@ -485,10 +508,11 @@ export class SubtextApp extends Container {
     }
     active.cancellationRequested = true;
     active.controller.abort();
-    this.status.setText(
+    this.setStatus(
       active.kind === "summary"
         ? "Cancelling Summary generation…"
         : "Cancelling Source Video processing…",
+      "warning",
     );
     this.tui.requestRender();
   }
@@ -518,7 +542,7 @@ export class SubtextApp extends Container {
   private async openLibrary(): Promise<void> {
     const library = this.library;
     if (library === undefined) {
-      this.reportLibraryMessage("The Artifact Library is not available in this build.");
+      this.reportLibraryMessage("The Artifact Library is not available in this build.", "warning");
       return;
     }
 
@@ -528,7 +552,7 @@ export class SubtextApp extends Container {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Could not read the Artifact Library.";
-      this.reportLibraryMessage(message);
+      this.reportLibraryMessage(message, "error");
       return;
     }
     if (this.stopped) {
@@ -601,31 +625,34 @@ export class SubtextApp extends Container {
     }
     try {
       const exportPath = await library.exportTranscript(videoId, format);
-      this.reportLibraryMessage(`Exported Transcript to ${exportPath}.`);
+      this.reportLibraryMessage(`Exported Transcript to ${exportPath}.`, "success");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not export the Transcript.";
-      this.reportLibraryMessage(message);
+      this.reportLibraryMessage(message, "error");
     }
   }
 
   private async openLibraryTarget(target: string, label: string): Promise<void> {
     const opener = this.externalOpener;
     if (opener === undefined) {
-      this.reportLibraryMessage("Opening external targets is not available in this build.");
+      this.reportLibraryMessage(
+        "Opening external targets is not available in this build.",
+        "warning",
+      );
       return;
     }
     try {
       await opener.open(target);
-      this.reportLibraryMessage(`${label} opened.`);
+      this.reportLibraryMessage(`${label} opened.`, "success");
     } catch (error) {
       const message = error instanceof Error ? error.message : `Could not open ${label}.`;
-      this.reportLibraryMessage(message);
+      this.reportLibraryMessage(message, "error");
     }
   }
 
   private refreshLibraryEntry(entry: ArtifactLibraryEntry): void {
     if (this.activeProcessing !== null) {
-      this.reportLibraryMessage("Refresh cannot start while processing is active.");
+      this.reportLibraryMessage("Refresh cannot start while processing is active.", "warning");
       return;
     }
     this.startVideoProcessing(entry.canonicalUrl, true);
@@ -633,7 +660,10 @@ export class SubtextApp extends Container {
 
   private confirmLibraryDeletion(entry: ArtifactLibraryEntry): void {
     if (this.activeProcessing !== null) {
-      this.reportLibraryMessage("Video Artifacts cannot be deleted while processing is active.");
+      this.reportLibraryMessage(
+        "Video Artifacts cannot be deleted while processing is active.",
+        "warning",
+      );
       return;
     }
 
@@ -657,10 +687,11 @@ export class SubtextApp extends Container {
       }
       this.reportLibraryMessage(
         deleted ? "Video Artifacts deleted." : "The selected Video Artifacts no longer exist.",
+        deleted ? "success" : "warning",
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not delete Video Artifacts.";
-      this.reportLibraryMessage(message);
+      this.reportLibraryMessage(message, "error");
     }
   }
 
@@ -676,7 +707,7 @@ export class SubtextApp extends Container {
         library.findSummary(videoId),
       ]);
       if (storedTranscript === null) {
-        this.reportLibraryMessage("The selected Transcript is no longer available.");
+        this.reportLibraryMessage("The selected Transcript is no longer available.", "warning");
         return;
       }
 
@@ -685,23 +716,23 @@ export class SubtextApp extends Container {
       if (storedSummary !== null && storedSummary.revision === storedTranscript.revision) {
         this.appendComponent(new SummaryView(storedSummary.markdown));
       } else {
-        this.appendMessage("Unsummarized Transcript — no current Summary is available.");
+        this.appendMessage("Unsummarized Transcript — no current Summary is available.", "warning");
       }
       if (this.activeProcessing === null) {
-        this.status.setText("Printed Video Artifacts from the Artifact Library.");
+        this.setStatus("Printed Video Artifacts from the Artifact Library.", "success");
       }
       this.tui.requestRender();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not print Video Artifacts.";
-      this.reportLibraryMessage(message);
+      this.reportLibraryMessage(message, "error");
     }
   }
 
-  private reportLibraryMessage(message: string): void {
+  private reportLibraryMessage(message: string, messageTone: UiTone = "muted"): void {
     if (this.activeProcessing === null) {
-      this.status.setText(message);
+      this.setStatus(message, messageTone);
     } else {
-      this.appendMessage(message);
+      this.appendMessage(message, messageTone);
     }
     this.tui.requestRender();
   }
@@ -709,7 +740,7 @@ export class SubtextApp extends Container {
   private openConfiguration(required: boolean): void {
     const configuration = this.configuration;
     if (configuration === undefined) {
-      this.status.setText("Options are not available in this build.");
+      this.setStatus("Options are not available in this build.", "warning");
       this.tui.requestRender();
       return;
     }
@@ -719,9 +750,9 @@ export class SubtextApp extends Container {
       await configuration.save(update);
       close();
       if (this.activeProcessing === null) {
-        this.status.setText("Options saved. Ready for a YouTube URL.");
+        this.setStatus("Options saved. Ready for a YouTube URL.", "success");
       } else {
-        this.appendMessage("Options saved — changes apply to future work.");
+        this.appendMessage("Options saved — changes apply to future work.", "success");
       }
       this.tui.requestRender();
     };
@@ -751,13 +782,17 @@ export class SubtextApp extends Container {
     this.tui.requestRender();
   }
 
-  private appendMessage(message: string): void {
-    this.appendComponent(new Text(message, 0, 0));
+  private setStatus(message: string, statusTone: UiTone): void {
+    this.status.setText(tone(message, statusTone));
   }
 
-  private appendComponent(
-    component: Text | TranscriptView | TranscriptDraftView | SummaryView,
-  ): void {
+  private appendMessage(message: string, messageTone?: UiTone): void {
+    this.appendComponent(
+      new Text(messageTone === undefined ? message : tone(message, messageTone), 0, 0),
+    );
+  }
+
+  private appendComponent(component: Component): void {
     if (this.history.children.length > 0) {
       this.history.addChild(new Spacer(1));
     }
@@ -765,6 +800,24 @@ export class SubtextApp extends Container {
   }
 }
 
-function identity(text: string): string {
-  return text;
+function videoOutcomeTone(outcome: VideoProcessingOutcome): "success" | "warning" | "error" {
+  if (outcome.status === "completed") {
+    return "success";
+  }
+  if (
+    outcome.status === "needs-input" ||
+    outcome.status === "unavailable" ||
+    outcome.status === "cancelled" ||
+    (outcome.status === "unsummarized" && outcome.summaryStatus === "cancelled")
+  ) {
+    return "warning";
+  }
+  return "error";
+}
+
+function summaryOutcomeTone(outcome: SummaryProcessingOutcome): "success" | "warning" | "error" {
+  if (outcome.status === "completed") {
+    return "success";
+  }
+  return outcome.status === "cancelled" || outcome.status === "unavailable" ? "warning" : "error";
 }

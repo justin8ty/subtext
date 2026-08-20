@@ -32,6 +32,7 @@ export class ManagedAsrAdapter implements AsrAdapter {
     const quality = options.quality ?? "balanced";
     let adapter = this.adapters.get(quality);
     if (adapter === undefined) {
+      options.onStage?.("preparing-runtime");
       const preparationOptions: MutableAsrRuntimePreparationOptions = { quality };
       if (options.signal !== undefined) {
         preparationOptions.signal = options.signal;
@@ -48,6 +49,7 @@ export class ManagedAsrAdapter implements AsrAdapter {
       adapter = createAdapter(runtime);
       this.adapters.set(quality, adapter);
     }
+    options.onStage?.("transcribing-whisper");
     return adapter.transcribe(audioPath, options);
   }
 }

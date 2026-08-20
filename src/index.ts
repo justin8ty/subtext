@@ -74,6 +74,7 @@ export {
   type RuntimeModelManifest,
   type RuntimeToolManifest,
 } from "./runtime/runtime-manifest.js";
+export type { ProcessingStage, ProcessingStageOptions } from "./processing/processing-stage.js";
 export {
   VideoProcessor,
   type SummaryProcessingOptions,

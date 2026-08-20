@@ -9,6 +9,7 @@ import {
   type AsrTranscriptionOptions,
 } from "../asr/asr-adapter.js";
 import { ArtifactLibrary, ArtifactLibraryError } from "../artifacts/artifact-library.js";
+import type { ProcessingStageOptions } from "../processing/processing-stage.js";
 import type { AsrQuality } from "../runtime/runtime-manifest.js";
 import { parseYoutubeUrl } from "../source-video/youtube-url.js";
 import { CaptionNormalizationError, normalizeJson3Caption } from "../transcript/normalize-json3.js";
@@ -45,11 +46,10 @@ export interface TranscriptDraft {
   readonly segment: TranscriptSegment;
 }
 
-export interface AcquisitionOptions {
+export interface AcquisitionOptions extends ProcessingStageOptions {
   readonly refresh?: boolean;
   readonly signal?: AbortSignal;
   readonly asrQuality?: AsrQuality;
-  readonly onAsrFallback?: () => void;
   readonly onTranscriptDraft?: (draft: TranscriptDraft) => void;
 }
 
@@ -127,6 +127,7 @@ export class TranscriptAcquirer {
         }
       }
 
+      options.onStage?.("inspecting-video");
       const video = await this.youtube.inspect(parsedUrl.canonicalUrl, options.signal);
       const eligibilityFailure = validateSourceVideo(video, parsedUrl.videoId);
       if (eligibilityFailure !== null) {
@@ -135,9 +136,11 @@ export class TranscriptAcquirer {
 
       const selection = selectEligibleCaption(video);
       if (selection.status === "selected") {
+        options.onStage?.("preparing-caption-transcript");
         return await this.acquireCaption(video, selection.track, selection.languageCode, options);
       }
-      options.onAsrFallback?.();
+      options.onStage?.("no-eligible-caption");
+      options.onStage?.("switching-to-asr");
       return await this.acquireAsr(video, options);
     } catch (error) {
       if (!(error instanceof Error)) {
@@ -243,6 +246,7 @@ export class TranscriptAcquirer {
       | { readonly status: "completed"; readonly result: AsrTranscript }
       | { readonly status: "failed"; readonly error: unknown };
     try {
+      options.onStage?.("downloading-default-audio");
       await this.youtube.downloadDefaultAudio(video.canonicalUrl, audioPath, options.signal);
       if (signalIsAborted(options.signal)) {
         throw new AsrAdapterError("cancelled", "Transcript acquisition was cancelled.");
@@ -261,6 +265,9 @@ export class TranscriptAcquirer {
       if (options.onTranscriptDraft !== undefined) {
         const onTranscriptDraft = options.onTranscriptDraft;
         asrOptions.onSegment = (segment) => onTranscriptDraft({ video: sourceVideo, segment });
+      }
+      if (options.onStage !== undefined) {
+        asrOptions.onStage = options.onStage;
       }
       transcription = {
         status: "completed",

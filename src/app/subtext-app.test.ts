@@ -105,6 +105,10 @@ describe("SubtextApp", () => {
     const rendered = app.render(80).join("\n");
     expect(stripTerminalSequences(rendered)).toContain("[01:05] A later supporting example.");
     expect(rendered).toContain(`${SOURCE_URL}&t=65s`);
+    expect(rendered).toContain("\u001b[1;36mSubtext\u001b[0m");
+    expect(rendered).toContain(`\u001b[1m${TRANSCRIPT.video.title}\u001b[0m`);
+    expect(rendered).toContain("\u001b[36m[01:05]\u001b[0m");
+    expect(rendered).toContain("\u001b[32mTranscript and Summary completed.\u001b[0m");
     expect(stripTerminalSequences(rendered)).toContain("## Takeaways");
     app.stop();
   });
@@ -120,11 +124,34 @@ describe("SubtextApp", () => {
     terminal.send("\r");
 
     await vi.waitFor(() =>
-      expect(renderedText(app)).toContain(
-        "No Eligible Caption Track found. Switching to local ASR.",
-      ),
+      expect(renderedText(app)).toContain("✓ No eligible Caption Track found"),
     );
-    expect(renderedText(app)).toContain("Preparing runtime and downloading Default Audio");
+    const rendered = renderedText(app);
+    expect(rendered).toContain("✓ Source Video inspected");
+    expect(rendered).toContain("→ Switching to local ASR");
+    expect(rendered).toContain("↓ Downloading Default Audio");
+    expect(rendered.match(/^[●↓◌] /gmu)).toHaveLength(1);
+    const styled = app.render(80).join("\n");
+    expect(styled).toContain("\u001b[33m✓ No eligible Caption Track found\u001b[0m");
+    expect(styled).toContain("\u001b[1;36m↓ Downloading Default Audio\u001b[0m");
+    app.stop();
+  });
+
+  it("renders failures in red", async () => {
+    const processing = new ImmediateProcessing({
+      status: "failed",
+      message: "Fixture failure.",
+    });
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(tui, processing);
+    app.start();
+
+    typeText(terminal, SOURCE_URL);
+    terminal.send("\r");
+
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Failed — Fixture failure."));
+    expect(app.render(80).join("\n")).toContain("\u001b[31mFailed — Fixture failure.\u001b[0m");
     app.stop();
   });
 
@@ -569,7 +596,10 @@ class PendingAsrFallbackProcessing implements SourceVideoProcessing {
     _sourceUrl: string,
     options: VideoProcessingOptions = {},
   ): Promise<VideoProcessingOutcome> {
-    options.onAsrFallback?.();
+    options.onStage?.("inspecting-video");
+    options.onStage?.("no-eligible-caption");
+    options.onStage?.("switching-to-asr");
+    options.onStage?.("downloading-default-audio");
     return new Promise((resolve) => {
       options.signal?.addEventListener(
         "abort",
@@ -593,6 +623,12 @@ class DelayedAsrProcessing implements SourceVideoProcessing {
     options: VideoProcessingOptions = {},
   ): Promise<VideoProcessingOutcome> {
     this.options = options;
+    options.onStage?.("inspecting-video");
+    options.onStage?.("no-eligible-caption");
+    options.onStage?.("switching-to-asr");
+    options.onStage?.("downloading-default-audio");
+    options.onStage?.("preparing-runtime");
+    options.onStage?.("transcribing-whisper");
     options.onTranscriptDraft?.({
       video: TRANSCRIPT.video,
       segment: TRANSCRIPT.segments[0]!,
@@ -612,6 +648,7 @@ class DelayedAsrProcessing implements SourceVideoProcessing {
       artifactDirectory: "/tmp/subtext-artifacts",
       reused: false,
     });
+    this.options?.onStage?.("generating-summary");
     this.finish?.({
       status: "completed",
       transcript: TRANSCRIPT,
@@ -647,11 +684,14 @@ class DelayedSummaryProcessing implements SourceVideoProcessing {
     _sourceUrl: string,
     options: VideoProcessingOptions = {},
   ): Promise<VideoProcessingOutcome> {
+    options.onStage?.("inspecting-video");
+    options.onStage?.("preparing-caption-transcript");
     options.onTranscript?.({
       transcript: TRANSCRIPT,
       artifactDirectory: "/tmp/subtext-artifacts",
       reused: false,
     });
+    options.onStage?.("generating-summary");
     return new Promise((resolve) => {
       this.finish = resolve;
     });
