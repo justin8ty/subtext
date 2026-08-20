@@ -2,7 +2,7 @@
 
 ## Product
 
-Subtext is a Windows 11, local-first terminal app for understanding a public, completed, single YouTube video without watching it.
+Subtext is a local-first terminal app for Windows 11 and Linux that helps users understand a public, completed, single YouTube video without watching it.
 
 Media acquisition, ASR, Transcript normalization, and artifact storage remain local. Only Transcript-derived text may be sent to the user-configured LLM provider.
 
@@ -69,7 +69,7 @@ Delete downloaded audio and processing intermediates after success. Derived Mark
 - Quantized `large-v3-turbo` balanced profile; `large-v3` accurate profile
 - Managed binaries/models under `~/.subtext/runtime`
 - Pi-compatible credentials under `~/.subtext/auth.json`
-- npm distribution initially
+- npm distribution for Windows x64 and Linux x64 initially
 - No telemetry
 - No speaker diarization or LLM rewriting of the canonical Transcript
 

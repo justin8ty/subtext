@@ -65,7 +65,9 @@ export {
   type YoutubeRuntimePaths,
 } from "./runtime/runtime-manager.js";
 export {
+  LINUX_X64_RUNTIME_MANIFEST,
   WINDOWS_X64_RUNTIME_MANIFEST,
+  runtimeManifestFor,
   type AsrQuality,
   type RuntimeDownload,
   type RuntimeManifest,

@@ -114,6 +114,7 @@ function runWhisperProcess(
 
   return new Promise((resolve, reject) => {
     const child = spawn(executable, arguments_, {
+      detached: process.platform !== "win32",
       shell: false,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],

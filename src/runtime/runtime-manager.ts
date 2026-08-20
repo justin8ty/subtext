@@ -1,12 +1,25 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 
 import extractZip from "extract-zip";
+import { x as extractTar } from "tar";
 
 import {
-  WINDOWS_X64_RUNTIME_MANIFEST,
+  runtimeManifestFor,
   type AsrQuality,
   type RuntimeDownload,
   type RuntimeManifest,
@@ -97,10 +110,11 @@ interface RuntimePackageSpec {
   readonly category: "tools" | "models";
   readonly directoryName: string;
   readonly version: string;
-  readonly archive: "file" | "zip";
+  readonly archive: RuntimeToolManifest["archive"];
   readonly download: RuntimeDownload;
   readonly directFileName?: string;
   readonly primaryFile: string;
+  readonly executable: boolean;
   readonly requiredFiles: readonly string[];
 }
 
@@ -130,7 +144,14 @@ export class RuntimeManager {
 
   constructor(options: RuntimeManagerOptions = {}) {
     this.rootDirectory = options.rootDirectory ?? join(homedir(), ".subtext", "runtime");
-    this.manifest = options.manifest ?? WINDOWS_X64_RUNTIME_MANIFEST;
+    const manifest = options.manifest ?? runtimeManifestFor(process.platform, process.arch);
+    if (manifest === null) {
+      throw new RuntimeManagerError(
+        "unsupported-platform",
+        `Subtext has no managed runtime for ${process.platform}/${process.arch}.`,
+      );
+    }
+    this.manifest = manifest;
     this.httpClient = options.httpClient ?? new FetchRuntimeHttpClient();
   }
 
@@ -228,18 +249,13 @@ export class RuntimeManager {
       await downloadVerified(spec, downloadPath, this.httpClient, signal, onProgress);
       throwIfAborted(signal);
       emitProgress(onProgress, { phase: "installing", packageId: spec.id });
-      if (spec.archive === "zip") {
-        await extractZip(downloadPath, { dir: resolve(contentDirectory) });
-      } else {
-        const directFileName = spec.directFileName;
-        if (directFileName === undefined) {
-          throw new RuntimeManagerError("install", `Runtime package ${spec.id} has no file name.`);
-        }
-        await rename(downloadPath, join(contentDirectory, directFileName));
-      }
+      await extractRuntimePackage(spec, downloadPath, contentDirectory);
       throwIfAborted(signal);
 
       const receipt = await createReceipt(contentDirectory, spec);
+      if (spec.executable && process.platform !== "win32") {
+        await chmod(safeReceiptPath(contentDirectory, receipt.primaryPath), 0o700);
+      }
       await writeFile(
         join(contentDirectory, RECEIPT_FILENAME),
         `${JSON.stringify(receipt, null, 2)}\n`,
@@ -347,6 +363,7 @@ function toolSpec(
     download: tool.download,
     primaryFile: tool.executableName,
     requiredFiles: tool.requiredFiles,
+    executable: true,
   };
   return tool.archive === "file" ? { ...base, directFileName: tool.executableName } : base;
 }
@@ -362,7 +379,166 @@ function modelSpec(quality: AsrQuality, model: RuntimeModelManifest): RuntimePac
     directFileName: model.fileName,
     primaryFile: model.fileName,
     requiredFiles: [model.fileName],
+    executable: false,
   };
+}
+
+async function extractRuntimePackage(
+  spec: RuntimePackageSpec,
+  downloadPath: string,
+  contentDirectory: string,
+): Promise<void> {
+  if (spec.archive === "zip") {
+    await extractZip(downloadPath, { dir: resolve(contentDirectory) });
+    await materializeArchiveSymlinks(contentDirectory);
+    return;
+  }
+  if (spec.archive === "tar.gz") {
+    await extractTarGzip(downloadPath, contentDirectory);
+    return;
+  }
+
+  const directFileName = spec.directFileName;
+  if (directFileName === undefined) {
+    throw new RuntimeManagerError("install", `Runtime package ${spec.id} has no file name.`);
+  }
+  await rename(downloadPath, join(contentDirectory, directFileName));
+}
+
+interface ArchiveLink {
+  readonly path: string;
+  readonly target: string;
+  readonly type: "hard" | "symbolic";
+}
+
+async function extractTarGzip(downloadPath: string, contentDirectory: string): Promise<void> {
+  const links: ArchiveLink[] = [];
+  await extractTar({
+    cwd: resolve(contentDirectory),
+    file: downloadPath,
+    filter: (path, entry) => {
+      if (!("type" in entry) || (entry.type !== "SymbolicLink" && entry.type !== "Link")) {
+        return true;
+      }
+      if (!("linkpath" in entry) || entry.linkpath === "") {
+        throw new RuntimeManagerError("install", "A runtime archive contains an invalid link.");
+      }
+      links.push({
+        path,
+        target: entry.linkpath,
+        type: entry.type === "Link" ? "hard" : "symbolic",
+      });
+      return false;
+    },
+    preserveOwner: false,
+    strict: true,
+  });
+  await materializeDeclaredArchiveLinks(contentDirectory, links);
+}
+
+async function materializeDeclaredArchiveLinks(
+  rootDirectory: string,
+  links: readonly ArchiveLink[],
+): Promise<void> {
+  const targets = new Map<string, string>();
+  for (const link of links) {
+    const path = safeArchivePath(link.path);
+    const target = safeArchivePath(
+      link.type === "hard" ? link.target : posix.join(posix.dirname(path), link.target),
+    );
+    if (targets.has(path)) {
+      throw new RuntimeManagerError("install", "A runtime archive contains duplicate links.");
+    }
+    targets.set(path, target);
+  }
+
+  const resolveTarget = (initialTarget: string): string => {
+    let target = initialTarget;
+    const visited = new Set<string>();
+    while (targets.has(target)) {
+      if (visited.has(target)) {
+        throw new RuntimeManagerError("install", "A runtime archive contains a link cycle.");
+      }
+      visited.add(target);
+      target = targets.get(target)!;
+    }
+    return target;
+  };
+
+  for (const [path, target] of targets) {
+    const source = safeReceiptPath(rootDirectory, resolveTarget(target));
+    const metadata = await stat(source);
+    if (!metadata.isFile()) {
+      throw new RuntimeManagerError(
+        "install",
+        "Runtime archive links must resolve to regular files.",
+      );
+    }
+    const destination = safeReceiptPath(rootDirectory, path);
+    await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
+    await copyFile(source, destination);
+    await chmod(destination, metadata.mode & 0o777);
+  }
+}
+
+function safeArchivePath(path: string): string {
+  const normalized = posix.normalize(path);
+  if (
+    normalized === "" ||
+    normalized === "." ||
+    posix.isAbsolute(normalized) ||
+    normalized === ".." ||
+    normalized.startsWith("../")
+  ) {
+    throw new RuntimeManagerError("install", "A runtime archive contains an unsafe path.");
+  }
+  return normalized;
+}
+
+async function materializeArchiveSymlinks(rootDirectory: string): Promise<void> {
+  const root = resolve(rootDirectory);
+  const links: Array<{ path: string; target: string; mode: number }> = [];
+
+  async function visit(directory: string): Promise<void> {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+        continue;
+      }
+      if (!entry.isSymbolicLink()) {
+        continue;
+      }
+
+      const target = await realpath(path);
+      const relativeTarget = relative(root, target);
+      if (
+        relativeTarget === ".." ||
+        relativeTarget.startsWith(`..${sep}`) ||
+        isAbsolute(relativeTarget)
+      ) {
+        throw new RuntimeManagerError(
+          "install",
+          "A runtime archive contains a link outside its package.",
+        );
+      }
+      const metadata = await stat(target);
+      if (!metadata.isFile()) {
+        throw new RuntimeManagerError(
+          "install",
+          "Runtime archive links must resolve to regular files.",
+        );
+      }
+      links.push({ path, target, mode: metadata.mode });
+    }
+  }
+
+  await visit(root);
+  for (const link of links) {
+    await rm(link.path, { force: true });
+    await copyFile(link.target, link.path);
+    await chmod(link.path, link.mode & 0o777);
+  }
 }
 
 class FetchRuntimeHttpClient implements RuntimeHttpClient {
@@ -517,6 +693,14 @@ async function verifyInstalledPackage(
         return null;
       }
     }
+    const primaryPath = safeReceiptPath(directory, receipt.primaryPath);
+    if (
+      spec.executable &&
+      process.platform !== "win32" &&
+      ((await stat(primaryPath)).mode & 0o111) === 0
+    ) {
+      return null;
+    }
     for (const requiredFile of spec.requiredFiles) {
       const requiredPath = receipt.requiredPaths[requiredFile];
       if (requiredPath === undefined) {
@@ -524,10 +708,7 @@ async function verifyInstalledPackage(
       }
       await stat(safeReceiptPath(directory, requiredPath));
     }
-    return {
-      directory,
-      primaryPath: safeReceiptPath(directory, receipt.primaryPath),
-    };
+    return { directory, primaryPath };
   } catch {
     return null;
   }
@@ -638,6 +819,7 @@ function packageIdentity(spec: RuntimePackageSpec): string {
         directFileName: spec.directFileName,
         primaryFile: spec.primaryFile,
         requiredFiles: spec.requiredFiles,
+        executable: spec.executable,
       }),
     )
     .digest("hex");
@@ -657,6 +839,7 @@ function validateManifest(manifest: RuntimeManifest): void {
     tools.some(
       (tool) =>
         !safePathPart(tool.version) ||
+        (tool.archive !== "file" && tool.archive !== "zip" && tool.archive !== "tar.gz") ||
         !safeFileName(tool.executableName) ||
         tool.requiredFiles.length === 0 ||
         tool.requiredFiles.some((file) => !safeFileName(file)) ||

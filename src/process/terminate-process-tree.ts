@@ -7,7 +7,13 @@ export function terminateProcessTree(child: ChildProcess): Promise<void> {
     return Promise.resolve();
   }
   if (process.platform !== "win32") {
-    child.kill();
+    try {
+      process.kill(-processId, "SIGTERM");
+    } catch (error) {
+      if (!(error instanceof Error) || !isMissingProcessError(error)) {
+        child.kill();
+      }
+    }
     return Promise.resolve();
   }
 
@@ -28,4 +34,8 @@ export function terminateProcessTree(child: ChildProcess): Promise<void> {
     taskkill.once("error", finish);
     taskkill.once("close", finish);
   });
+}
+
+function isMissingProcessError(error: Error): boolean {
+  return error instanceof Error && "code" in error && error.code === "ESRCH";
 }

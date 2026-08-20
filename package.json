@@ -5,10 +5,21 @@
   "bin": {
     "subtext": "./dist/main.js"
   },
+  "files": [
+    "dist"
+  ],
+  "os": [
+    "win32",
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
   "type": "module",
   "scripts": {
     "dev": "tsx src/main.ts",
-    "build": "tsc",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "pnpm clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "format": "oxfmt .",
@@ -18,7 +29,8 @@
   "dependencies": {
     "@earendil-works/pi-ai": "^0.84.2",
     "@earendil-works/pi-tui": "^0.84.2",
-    "extract-zip": "^2.0.1"
+    "extract-zip": "^2.0.1",
+    "tar": "^7.5.22"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.78.0",

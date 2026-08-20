@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -14,6 +14,10 @@ import {
 
 const ZIP = Buffer.from(
   "UEsDBBQAAAAIAAaOE12e4/wvCAAAAAYAAAAVAAAAYnVuZGxlL2Jpbi9mZm1wZWcuZXhlS0vLLUhNBwBQSwMEFAAAAAgABo4TXdHS27oJAAAABwAAABYAAABidW5kbGUvYmluL2ZmcHJvYmUuZXhlS0srKMpPSgUAUEsDBBQAAAAIAAaOE10AQdxPCQAAAAcAAAAXAAAAUmVsZWFzZS93aGlzcGVyLWNsaS5leGUrz8gsLkgtAgBQSwMEFAAAAAgABo4TXTaz0z0FAAAAAwAAABMAAABSZWxlYXNlL3doaXNwZXIuZGxsS8nJAQBQSwECFAMUAAAACAAGjhNdnuP8LwgAAAAGAAAAFQAAAAAAAAAAAAAAgAEAAAAAYnVuZGxlL2Jpbi9mZm1wZWcuZXhlUEsBAhQDFAAAAAgABo4TXdHS27oJAAAABwAAABYAAAAAAAAAAAAAAIABOwAAAGJ1bmRsZS9iaW4vZmZwcm9iZS5leGVQSwECFAMUAAAACAAGjhNdAEHcTwkAAAAHAAAAFwAAAAAAAAAAAAAAgAF4AAAAUmVsZWFzZS93aGlzcGVyLWNsaS5leGVQSwECFAMUAAAACAAGjhNdNrPTPQUAAAADAAAAEwAAAAAAAAAAAAAAgAG2AAAAUmVsZWFzZS93aGlzcGVyLmRsbFBLBQYAAAAABAAEAA0BAADsAAAAAAA=",
+  "base64",
+);
+const TAR_GZ = Buffer.from(
+  "H4sIAAAAAAAAA+3V4QqCMBSG4V3KbiDb0c1dj5bRQiymUt190wwqE4lmEn3PnwkKHnw5mNbFOs+WbErC0Uo1J2kl7s8bRiqUpJSQMmKCSEvJuJp0qk5dVonlnO3chSmGnxu7/6PSa//cpBtzqmqbBeXe9zva/lq/0V9HUjAePkwVkO+5Wujf6+/7SzeBY7fQw/31U38Zh66/8DvGa3/e34W3iT3PPQbMpNv/49aUh8wuVrnx/47x/39v/4kU9v8buvBzjwEAAAAAAAAAAAAAAAAAAB+6AEvaYi4AKAAA",
   "base64",
 );
 const YT_DLP = Buffer.from("yt-dlp");
@@ -61,7 +65,46 @@ describe("RuntimeManager", () => {
     expect(http.requestCount).toBe(4);
     expect(progress).toContain("installing:ffmpeg");
     expect(progress).toContain("ready:model-balanced");
+    if (process.platform !== "win32") {
+      expect((await stat(firstYoutube.ytDlpExecutable)).mode & 0o111).not.toBe(0);
+      expect((await stat(firstAsr.whisperExecutable)).mode & 0o111).not.toBe(0);
+    }
   });
+
+  it.runIf(process.platform !== "win32")(
+    "extracts tar.gz tools, materializes safe links, and preserves executability",
+    async () => {
+      const rootDirectory = await temporaryRuntime();
+      const baseManifest = fixtureManifest("v1");
+      const manifest: RuntimeManifest = {
+        ...baseManifest,
+        tools: {
+          ...baseManifest.tools,
+          whisperCpp: {
+            version: "v1",
+            archive: "tar.gz",
+            download: download("v1", "whisper.tar.gz", TAR_GZ),
+            executableName: "whisper-cli",
+            requiredFiles: ["whisper-cli", "libfixture.so"],
+          },
+        },
+      };
+      const responses = downloads("v1");
+      responses.set("https://runtime.test/v1/whisper.tar.gz", TAR_GZ);
+      const manager = new RuntimeManager({
+        rootDirectory,
+        manifest,
+        httpClient: new MemoryRuntimeHttpClient(responses),
+      });
+
+      const runtime = await manager.prepareAsr();
+      const linkedLibrary = join(dirname(runtime.whisperExecutable), "libfixture.so");
+
+      expect((await lstat(linkedLibrary)).isFile()).toBe(true);
+      await expect(readFile(linkedLibrary, "utf8")).resolves.toBe("library");
+      expect((await stat(runtime.whisperExecutable)).mode & 0o111).not.toBe(0);
+    },
+  );
 
   it("repairs a same-size corrupted executable after full digest verification", async () => {
     const rootDirectory = await temporaryRuntime();
