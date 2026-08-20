@@ -1,6 +1,6 @@
 import { Container, Key, Text, matchesKey } from "@earendil-works/pi-tui";
 
-export class HelpOverlay extends Container {
+export class HelpView extends Container {
   private readonly close: () => void;
 
   constructor(close: () => void) {

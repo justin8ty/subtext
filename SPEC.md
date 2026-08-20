@@ -78,7 +78,7 @@ Public product naming and licensing remain deferred.
 ## Improvements
 
 - When no Eligible Caption Track is available, immediately report that none was found and that Subtext is switching to ASR. Show this before Default Audio download and runtime preparation so the app does not appear stalled during the fallback.
-- Replace the overlay palette with Command Completion below the focused editor. Typing `/` lists App Commands without covering the existing interface; additional text fuzzy-filters command names, descriptions, and search aliases. For example, `/set` matches Options through its `settings` alias.
+- Replace the overlay palette with Command Completion below the focused editor. Typing `/` lists App Commands without covering the existing interface; additional text fuzzy-filters command names, descriptions, and search aliases. For example, `/set` matches Options through its `settings` alias. Selecting an App Command replaces Command Completion in the same below-editor region with that command's interface; `/settings`, `/help`, and other App Commands do not open overlays.
 - Add native Linux support, including managed runtime assets, process handling, external-open behavior, packaging, and platform-specific verification.
 
 ### Highest-impact improvements

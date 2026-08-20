@@ -5,8 +5,8 @@ import {
   Spacer,
   Text,
   matchesKey,
+  type Component,
   type EditorTheme,
-  type OverlayHandle,
   type SelectListTheme,
   type TUI,
   type TuiInputListenerResult,
@@ -33,14 +33,14 @@ import {
   type AppCommandDestination,
 } from "./command-completion.js";
 import { ConfigurationWizard } from "./configuration-wizard.js";
-import { HelpOverlay } from "./help-overlay.js";
+import { HelpView } from "./help-view.js";
 import {
-  DeleteConfirmationOverlay,
-  LibraryActionsOverlay,
-  LibraryOverlay,
-  TranscriptExportOverlay,
+  DeleteConfirmationView,
+  LibraryActionsView,
+  LibraryView,
+  TranscriptExportView,
   type LibraryAction,
-} from "./library-overlay.js";
+} from "./library-view.js";
 import { SummaryView } from "./summary-view.js";
 import { TranscriptDraftView } from "./transcript-draft-view.js";
 import { TranscriptView } from "./transcript-view.js";
@@ -91,6 +91,7 @@ export class SubtextApp extends Container {
   private readonly history = new Container();
   private readonly status = new Text("Ready. Paste a YouTube URL and press Enter.", 0, 0);
   private readonly editor: Editor;
+  private readonly commandPanel = new Container();
   private removeInputListener: (() => void) | null = null;
   private activeProcessing: ActiveProcessing | null = null;
   private latestTranscriptVideoId: string | null = null;
@@ -114,6 +115,7 @@ export class SubtextApp extends Container {
     this.addChild(this.history);
     this.addChild(this.status);
     this.addChild(this.editor);
+    this.addChild(this.commandPanel);
     this.addChild(
       new Text("/ App Commands · R regenerate Summary · Esc cancel · Ctrl+C quit", 0, 0),
     );
@@ -163,7 +165,7 @@ export class SubtextApp extends Container {
       return { consume: true };
     }
 
-    if (this.tui.hasOverlay()) {
+    if (this.commandPanel.children.length > 0 || this.tui.hasOverlay()) {
       return undefined;
     }
 
@@ -492,7 +494,7 @@ export class SubtextApp extends Container {
   }
 
   private restoreEditorFocus(): void {
-    if (!this.tui.hasOverlay()) {
+    if (this.commandPanel.children.length === 0 && !this.tui.hasOverlay()) {
       this.tui.setFocus(this.editor);
     }
   }
@@ -537,43 +539,18 @@ export class SubtextApp extends Container {
       return;
     }
 
-    let handle: OverlayHandle;
-    const close = (): void => {
-      handle.hide();
-      this.restoreEditorFocus();
-      this.tui.requestRender();
-    };
-    const select = (entry: ArtifactLibraryEntry): void => {
-      close();
-      this.openLibraryActions(entry);
-    };
-    handle = this.tui.showOverlay(new LibraryOverlay(this.tui, entries, select, close), {
-      width: "80%",
-      minWidth: 42,
-      maxHeight: 16,
-      margin: 1,
-    });
-    this.tui.requestRender();
+    const close = (): void => this.closeCommandPanel();
+    const select = (entry: ArtifactLibraryEntry): void => this.openLibraryActions(entry);
+    this.openCommandPanel(new LibraryView(this.tui, entries, select, close));
   }
 
   private openLibraryActions(entry: ArtifactLibraryEntry): void {
-    let handle: OverlayHandle;
-    const close = (): void => {
-      handle.hide();
-      this.restoreEditorFocus();
-      this.tui.requestRender();
-    };
+    const close = (): void => this.closeCommandPanel();
     const select = (action: LibraryAction): void => {
       close();
       this.performLibraryAction(entry, action);
     };
-    handle = this.tui.showOverlay(new LibraryActionsOverlay(this.tui, entry, select, close), {
-      width: "80%",
-      minWidth: 42,
-      maxHeight: 12,
-      margin: 1,
-    });
-    this.tui.requestRender();
+    this.openCommandPanel(new LibraryActionsView(this.tui, entry, select, close));
   }
 
   private performLibraryAction(entry: ArtifactLibraryEntry, action: LibraryAction): void {
@@ -609,23 +586,12 @@ export class SubtextApp extends Container {
   }
 
   private openTranscriptExport(entry: ArtifactLibraryEntry): void {
-    let handle: OverlayHandle;
-    const close = (): void => {
-      handle.hide();
-      this.restoreEditorFocus();
-      this.tui.requestRender();
-    };
+    const close = (): void => this.closeCommandPanel();
     const select = (format: TranscriptExportFormat): void => {
       close();
       void this.exportLibraryEntry(entry.videoId, format);
     };
-    handle = this.tui.showOverlay(new TranscriptExportOverlay(this.tui, select, close), {
-      width: "70%",
-      minWidth: 36,
-      maxHeight: 9,
-      margin: 1,
-    });
-    this.tui.requestRender();
+    this.openCommandPanel(new TranscriptExportView(this.tui, select, close));
   }
 
   private async exportLibraryEntry(videoId: string, format: TranscriptExportFormat): Promise<void> {
@@ -671,23 +637,12 @@ export class SubtextApp extends Container {
       return;
     }
 
-    let handle: OverlayHandle;
-    const close = (): void => {
-      handle.hide();
-      this.restoreEditorFocus();
-      this.tui.requestRender();
-    };
+    const close = (): void => this.closeCommandPanel();
     const confirm = (): void => {
       close();
       void this.deleteLibraryEntry(entry.videoId);
     };
-    handle = this.tui.showOverlay(new DeleteConfirmationOverlay(entry, confirm, close), {
-      width: "75%",
-      minWidth: 40,
-      maxHeight: 8,
-      margin: 1,
-    });
-    this.tui.requestRender();
+    this.openCommandPanel(new DeleteConfirmationView(entry, confirm, close));
   }
 
   private async deleteLibraryEntry(videoId: string): Promise<void> {
@@ -759,12 +714,7 @@ export class SubtextApp extends Container {
       return;
     }
 
-    let handle: OverlayHandle;
-    const close = (): void => {
-      handle.hide();
-      this.restoreEditorFocus();
-      this.tui.requestRender();
-    };
+    const close = (): void => this.closeCommandPanel();
     const save = async (update: ConfigurationUpdate): Promise<void> => {
       await configuration.save(update);
       close();
@@ -780,27 +730,24 @@ export class SubtextApp extends Container {
       onSaved: save,
       onCancel: close,
     });
-    handle = this.tui.showOverlay(wizard, {
-      width: "80%",
-      minWidth: 42,
-      maxHeight: 16,
-      margin: 1,
-    });
-    this.tui.requestRender();
+    this.openCommandPanel(wizard);
   }
 
   private openHelp(): void {
-    let handle: OverlayHandle;
-    const close = (): void => {
-      handle.hide();
-      this.tui.requestRender();
-    };
-    handle = this.tui.showOverlay(new HelpOverlay(close), {
-      width: "80%",
-      minWidth: 38,
-      maxHeight: 13,
-      margin: 1,
-    });
+    const close = (): void => this.closeCommandPanel();
+    this.openCommandPanel(new HelpView(close));
+  }
+
+  private openCommandPanel(component: Component): void {
+    this.commandPanel.clear();
+    this.commandPanel.addChild(component);
+    this.tui.setFocus(component);
+    this.tui.requestRender();
+  }
+
+  private closeCommandPanel(): void {
+    this.commandPanel.clear();
+    this.restoreEditorFocus();
     this.tui.requestRender();
   }
 

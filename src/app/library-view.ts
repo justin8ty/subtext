@@ -31,7 +31,7 @@ export type LibraryAction =
   | "refresh"
   | "delete";
 
-export class LibraryOverlay extends Container implements Focusable {
+export class LibraryView extends Container implements Focusable {
   private readonly query = new Input();
   private readonly list: SelectList;
   private readonly tui: TUI;
@@ -103,7 +103,7 @@ interface MenuItem<Value extends string> extends SelectItem {
   readonly value: Value;
 }
 
-class MenuOverlay<Value extends string> extends Container {
+class MenuView<Value extends string> extends Container {
   private readonly list: SelectList;
   private readonly tui: TUI;
   private readonly cancel: () => void;
@@ -145,7 +145,7 @@ class MenuOverlay<Value extends string> extends Container {
   }
 }
 
-export class LibraryActionsOverlay extends MenuOverlay<LibraryAction> {
+export class LibraryActionsView extends MenuView<LibraryAction> {
   constructor(
     tui: TUI,
     entry: ArtifactLibraryEntry,
@@ -186,7 +186,7 @@ export class LibraryActionsOverlay extends MenuOverlay<LibraryAction> {
   }
 }
 
-export class TranscriptExportOverlay extends MenuOverlay<TranscriptExportFormat> {
+export class TranscriptExportView extends MenuView<TranscriptExportFormat> {
   constructor(tui: TUI, select: (format: TranscriptExportFormat) => void, cancel: () => void) {
     super(
       tui,
@@ -203,7 +203,7 @@ export class TranscriptExportOverlay extends MenuOverlay<TranscriptExportFormat>
   }
 }
 
-export class DeleteConfirmationOverlay extends Container {
+export class DeleteConfirmationView extends Container {
   private readonly confirm: () => void;
   private readonly cancel: () => void;
 

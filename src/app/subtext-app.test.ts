@@ -234,7 +234,7 @@ describe("SubtextApp", () => {
     app.stop();
   });
 
-  it("keeps App Command Completion available during active processing", async () => {
+  it("keeps App Command Completion and inline Help available during active processing", async () => {
     const processing = new AbortableProcessing();
     const terminal = new FakeTerminal();
     const tui: TUI = new TuiMainScreen(terminal);
@@ -254,7 +254,15 @@ describe("SubtextApp", () => {
     await vi.waitFor(() => expect(renderedText(app)).toContain("→ Help"));
     terminal.send("\r");
 
-    expect(tui.hasOverlay()).toBe(true);
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Subtext Help"));
+    expect(renderedText(app)).not.toContain("Browse completed Video Artifacts");
+    expect(tui.hasOverlay()).toBe(false);
+    expect(processing.signal?.aborted).toBe(false);
+
+    processing.complete();
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Ready for another URL."));
+    terminal.send("\u001b");
+    expect(renderedText(app)).not.toContain("Subtext Help");
     expect(processing.signal?.aborted).toBe(false);
     app.stop();
   });
@@ -320,7 +328,8 @@ describe("SubtextApp", () => {
     );
     app.start();
 
-    expect(tui.hasOverlay()).toBe(true);
+    expect(tui.hasOverlay()).toBe(false);
+    expect(renderedText(app)).toContain("Set up Subtext");
     terminal.send("\r");
     typeText(terminal, "fixture-secret-key");
     expect(renderedText(app)).not.toContain("fixture-secret-key");
@@ -330,7 +339,8 @@ describe("SubtextApp", () => {
     terminal.send("\r");
 
     await vi.waitFor(() => expect(configuration.saved?.apiKey).toBe("fixture-secret-key"));
-    await vi.waitFor(() => expect(tui.hasOverlay()).toBe(false));
+    await vi.waitFor(() => expect(renderedText(app)).not.toContain("Set up Subtext"));
+    expect(tui.hasOverlay()).toBe(false);
     expect(configuration.current).toMatchObject({
       summaryProvider: "deepseek",
       summaryModel: "deepseek-v4-flash",
@@ -358,7 +368,8 @@ describe("SubtextApp", () => {
     terminal.send("\r");
 
     await vi.waitFor(() => expect(library.listCalls).toBe(1));
-    await vi.waitFor(() => expect(tui.hasOverlay()).toBe(true));
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Artifact Library"));
+    expect(tui.hasOverlay()).toBe(false);
     terminal.send("\r");
     terminal.send("\r");
 
@@ -483,7 +494,7 @@ describe("SubtextApp", () => {
     app.stop();
   });
 
-  it("shows App Command Completion below the editor and fuzzy-matches search aliases", async () => {
+  it("replaces Command Completion with inline Options selected through its settings alias", async () => {
     const terminal = new FakeTerminal();
     const tui: TUI = new TuiMainScreen(terminal);
     const app = new SubtextApp(
@@ -502,14 +513,14 @@ describe("SubtextApp", () => {
     expect(renderedText(app)).toContain("Configure Summary and ASR preferences");
     expect(tui.hasOverlay()).toBe(false);
 
-    typeText(terminal, "set");
+    typeText(terminal, "settings");
     await vi.waitFor(() => expect(renderedText(app)).toContain("→ Options"));
     terminal.send("\r");
 
-    expect(tui.hasOverlay()).toBe(true);
-    await vi.waitFor(() =>
-      expect(stripTerminalSequences(terminal.writes.join(""))).toContain("Subtext Options"),
-    );
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Subtext Options"));
+    expect(renderedText(app)).not.toContain("Browse completed Video Artifacts");
+    expect(renderedText(app)).not.toContain("Configure Summary and ASR preferences");
+    expect(tui.hasOverlay()).toBe(false);
     app.stop();
   });
 });
@@ -665,17 +676,23 @@ class DelayedSummaryProcessing implements SourceVideoProcessing {
 class AbortableProcessing implements SourceVideoProcessing {
   calls = 0;
   signal: AbortSignal | undefined;
+  private finish: ((outcome: VideoProcessingOutcome) => void) | null = null;
 
   process(_sourceUrl: string, options: AcquisitionOptions = {}): Promise<VideoProcessingOutcome> {
     this.calls += 1;
     this.signal = options.signal;
     return new Promise((resolve) => {
+      this.finish = resolve;
       options.signal?.addEventListener(
         "abort",
         () => resolve({ status: "cancelled", message: "Transcript acquisition was cancelled." }),
         { once: true },
       );
     });
+  }
+
+  complete(): void {
+    this.finish?.({ status: "needs-input", reason: "invalid-source-url", message: "Done." });
   }
 
   async summarize(
@@ -775,7 +792,8 @@ async function selectLibraryAction(
   await vi.waitFor(() => expect(renderedText(app)).toContain("→ Library"));
   terminal.send("\r");
   await vi.waitFor(() => expect(library.listCalls).toBe(expectedListCalls));
-  await vi.waitFor(() => expect(tui.hasOverlay()).toBe(true));
+  await vi.waitFor(() => expect(renderedText(app)).toContain("Artifact Library"));
+  expect(tui.hasOverlay()).toBe(false);
   terminal.send("\r");
   for (let index = 0; index < actionIndex; index += 1) {
     terminal.send("\u001b[B");
