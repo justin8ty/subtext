@@ -12,8 +12,9 @@ import {
 
 import type { ArtifactLibraryEntry } from "../artifacts/artifact-library.js";
 import type { TranscriptExportFormat } from "../artifacts/transcript-export.js";
+import { badge, KeyHints, SectionHeader, StatusLine } from "./design-system.js";
 import { Panel } from "./panel.js";
-import { bold, dim, SELECT_THEME, warning } from "./theme.js";
+import { SELECT_THEME, THEME } from "./theme.js";
 
 export type LibraryAction =
   | "print"
@@ -46,17 +47,29 @@ export class LibraryView extends Panel implements Focusable {
     this.entriesByVideoId = new Map(entries.map((entry) => [entry.videoId, entry]));
     this.list = new SelectList(entries.map(entryItem), Math.min(10, entries.length), SELECT_THEME);
 
-    this.addChild(new Text(bold("Artifact Library"), 1, 0));
     this.addChild(
-      new Text(dim(`${entries.length} saved Source Video${entries.length === 1 ? "" : "s"}`), 1, 0),
+      new SectionHeader(
+        "Artifact Library",
+        `${entries.length} saved Source Video${entries.length === 1 ? "" : "s"}`,
+        1,
+      ),
     );
     this.addChild(new Spacer(1));
-    this.addChild(new Text(dim("Search library"), 1, 0));
+    this.addChild(new Text(THEME.muted("Search library"), 1, 0));
     this.addChild(this.query);
     this.addChild(new Spacer(1));
     this.addChild(this.list);
     this.addChild(new Spacer(1));
-    this.addChild(new Text(dim("↑↓ navigate · enter actions · esc close"), 1, 0));
+    this.addChild(
+      new KeyHints(
+        [
+          ["↑↓", "navigate"],
+          ["Enter", "actions"],
+          ["Esc", "close"],
+        ],
+        { paddingX: 1 },
+      ),
+    );
 
     this.list.onSelect = (item) => {
       const entry = this.entriesByVideoId.get(item.value);
@@ -125,11 +138,20 @@ class MenuView<Value extends string> extends Panel {
       }
     };
     this.list.onCancel = cancel;
-    this.addChild(new Text(bold(title), 1, 0));
+    this.addChild(new SectionHeader(title, undefined, 1));
     this.addChild(new Spacer(1));
     this.addChild(this.list);
     this.addChild(new Spacer(1));
-    this.addChild(new Text(dim("↑↓ navigate · enter select · esc close"), 1, 0));
+    this.addChild(
+      new KeyHints(
+        [
+          ["↑↓", "navigate"],
+          ["Enter", "select"],
+          ["Esc", "close"],
+        ],
+        { paddingX: 1 },
+      ),
+    );
   }
 
   handleInput(data: string): void {
@@ -208,14 +230,26 @@ export class DeleteConfirmationView extends Panel {
     super();
     this.confirm = confirm;
     this.cancel = cancel;
-    this.addChild(new Text(warning("Delete Video Artifacts?"), 1, 0));
-    this.addChild(new Text(bold(entry.title), 1, 0));
+    this.addChild(new StatusLine("Delete Video Artifacts?", "error", 1));
+    this.addChild(new SectionHeader(entry.title, undefined, 1));
     this.addChild(new Spacer(1));
     this.addChild(
-      new Text(dim("This deletes the Transcript, source evidence, Summary, and exports."), 1, 0),
+      new Text(
+        THEME.muted("This deletes the Transcript, source evidence, Summary, and exports."),
+        1,
+        0,
+      ),
     );
     this.addChild(new Spacer(1));
-    this.addChild(new Text(dim("Y delete · N or esc cancel"), 1, 0));
+    this.addChild(
+      new KeyHints(
+        [
+          ["Y", "delete"],
+          ["N / Esc", "cancel"],
+        ],
+        { paddingX: 1 },
+      ),
+    );
   }
 
   handleInput(data: string): void {
@@ -230,18 +264,14 @@ export class DeleteConfirmationView extends Panel {
 }
 
 function entryItem(entry: ArtifactLibraryEntry): SelectItem {
-  const origin = entry.transcriptOrigin === "asr" ? badge("ASR") : badge("CAPTIONS");
-  const summary = entry.hasSummary ? badge("SUMMARY") : badge("NO SUMMARY");
+  const origin = entry.transcriptOrigin === "asr" ? badge("ASR") : badge("CAPTIONS", "accent");
+  const summary = entry.hasSummary ? badge("SUMMARY", "success") : badge("NO SUMMARY", "warning");
   const captionKind = captionKindLabel(entry.transcriptOrigin);
   return {
     value: entry.videoId,
     label: entry.title,
     description: `${origin} ${summary}  ${entry.languageCode}${captionKind === "" ? "" : ` · ${captionKind}`}`,
   };
-}
-
-function badge(label: string): string {
-  return `[${label}]`;
 }
 
 function captionKindLabel(origin: ArtifactLibraryEntry["transcriptOrigin"]): string {

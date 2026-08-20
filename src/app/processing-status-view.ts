@@ -1,7 +1,8 @@
 import { wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
 
 import type { ProcessingStage } from "../processing/processing-stage.js";
-import { accent, active, success, warning, error } from "./theme.js";
+import { statusText } from "./design-system.js";
+import { THEME } from "./theme.js";
 
 type FinalTone = "success" | "warning" | "error";
 type StageLine =
@@ -112,18 +113,18 @@ function isNoticeStage(stage: ProcessingStage): stage is NoticeStage {
 function renderLine(line: StageLine): string {
   if (line.kind === "notice") {
     return line.stage === "no-eligible-caption"
-      ? warning("✓ No eligible Caption Track found")
-      : accent("→ Switching to local ASR");
+      ? statusText("✓ No eligible Caption Track found", "warning")
+      : statusText("→ Switching to local ASR", "accent");
   }
 
   const copy = STAGE_COPY[line.stage];
   if (line.kind === "active") {
-    return active(`${copy.symbol} ${copy.active}`);
+    return THEME.active(`${copy.symbol} ${copy.active}`);
   }
   if (line.kind === "completed") {
-    return success(`✓ ${copy.completed}`);
+    return statusText(`✓ ${copy.completed}`, "success");
   }
   return line.tone === "warning"
-    ? warning(`! ${copy.active} cancelled`)
-    : error(`✗ ${copy.failed}`);
+    ? statusText(`! ${copy.active} cancelled`, "warning")
+    : statusText(`✗ ${copy.failed}`, "error");
 }

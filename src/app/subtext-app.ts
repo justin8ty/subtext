@@ -2,7 +2,6 @@ import {
   Container,
   Key,
   Spacer,
-  Text,
   matchesKey,
   type Component,
   type TUI,
@@ -38,9 +37,9 @@ import {
   TranscriptExportView,
   type LibraryAction,
 } from "./library-view.js";
+import { KeyHints, SectionHeader, StatusLine, type UiTone } from "./design-system.js";
 import { ProcessingStatusView } from "./processing-status-view.js";
 import { SummaryView } from "./summary-view.js";
-import { active, dim, keyHint, tone, type UiTone } from "./theme.js";
 import { TranscriptDraftView } from "./transcript-draft-view.js";
 import { UrlEditor } from "./url-editor.js";
 import { TranscriptView } from "./transcript-view.js";
@@ -77,11 +76,11 @@ export class SubtextApp extends Container {
   private readonly library: ArtifactLibraryAccess | undefined;
   private readonly externalOpener: ExternalOpener | undefined;
   private readonly history = new Container();
-  private readonly status = new Text(dim("Ready. Paste a YouTube URL and press Enter."), 0, 0);
-  private readonly editorHint = new Text(
-    dim("Public, completed YouTube videos only · Enter to process"),
+  private readonly status = new StatusLine("Ready. Paste a YouTube URL and press Enter.", "muted");
+  private readonly editorHint = new StatusLine(
+    "Public, completed YouTube videos only · Enter to process",
+    "muted",
     1,
-    0,
   );
   private readonly editor: UrlEditor;
   private readonly commandPanel = new Container();
@@ -102,8 +101,7 @@ export class SubtextApp extends Container {
     this.editor.setAutocompleteProvider(new AppCommandCompletion());
     this.editor.onSubmit = (sourceUrl) => this.submit(sourceUrl);
 
-    this.addChild(new Text(active("Subtext"), 0, 0));
-    this.addChild(new Text(dim("Understand a YouTube video without watching it."), 0, 0));
+    this.addChild(new SectionHeader("Subtext", "Understand a YouTube video without watching it."));
     this.addChild(new Spacer(1));
     this.addChild(this.history);
     this.addChild(this.status);
@@ -111,16 +109,12 @@ export class SubtextApp extends Container {
     this.addChild(this.editorHint);
     this.addChild(this.commandPanel);
     this.addChild(
-      new Text(
-        keyHint([
-          ["/", "App Commands"],
-          ["R", "regenerate Summary"],
-          ["Esc", "cancel"],
-          ["Ctrl+C", "quit"],
-        ]),
-        0,
-        0,
-      ),
+      new KeyHints([
+        ["/", "App Commands"],
+        ["R", "regenerate Summary"],
+        ["Esc", "cancel"],
+        ["Ctrl+C", "quit"],
+      ]),
     );
   }
 
@@ -793,23 +787,20 @@ export class SubtextApp extends Container {
 
   private setEditorProcessing(processing: boolean): void {
     this.editor.setProcessing(processing);
-    this.editorHint.setText(
-      dim(
-        processing
-          ? "Processing active · New URLs unavailable · / App Commands remain available"
-          : "Public, completed YouTube videos only · Enter to process",
-      ),
+    this.editorHint.setStatus(
+      processing
+        ? "Processing active · New URLs unavailable · / App Commands remain available"
+        : "Public, completed YouTube videos only · Enter to process",
+      "muted",
     );
   }
 
   private setStatus(message: string, statusTone: UiTone): void {
-    this.status.setText(tone(message, statusTone));
+    this.status.setStatus(message, statusTone);
   }
 
   private appendMessage(message: string, messageTone?: UiTone): void {
-    this.appendComponent(
-      new Text(messageTone === undefined ? message : tone(message, messageTone), 0, 0),
-    );
+    this.appendComponent(new StatusLine(message, messageTone ?? "muted"));
   }
 
   private appendComponent(component: Component): void {

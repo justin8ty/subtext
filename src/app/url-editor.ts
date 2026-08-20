@@ -8,7 +8,7 @@ import {
   type TUI,
 } from "@earendil-works/pi-tui";
 
-import { accent, border, dim, EDITOR_THEME, mutedAccent } from "./theme.js";
+import { EDITOR_THEME, THEME } from "./theme.js";
 import { borderedLine } from "./panel.js";
 
 const URL_PLACEHOLDER = "Paste a YouTube URL…";
@@ -29,7 +29,7 @@ export class UrlEditor extends Editor {
       return super.render(width);
     }
 
-    const frame = this.processing ? border : this.focused ? accent : border;
+    const frame = this.processing ? THEME.border : this.focused ? THEME.accent : THEME.border;
     this.borderColor = frame;
     const contentWidth = width - 2;
     const editorLines = super.render(contentWidth);
@@ -64,9 +64,9 @@ export class UrlEditor extends Editor {
 
 function renderPlaceholder(width: number, paddingX: number, focused: boolean): string {
   const leftPadding = " ".repeat(Math.min(paddingX, Math.max(0, width - 1)));
-  const cursor = focused ? `${CURSOR_MARKER}${mutedAccent("▏")} ` : "";
+  const cursor = focused ? `${CURSOR_MARKER}${THEME.timestamp("▏")} ` : "";
   const copy = truncateToWidth(
-    dim(URL_PLACEHOLDER),
+    THEME.muted(URL_PLACEHOLDER),
     Math.max(0, width - visibleWidth(leftPadding + cursor)),
     "",
   );

@@ -1,6 +1,6 @@
 import { Container, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { border } from "./theme.js";
+import { THEME } from "./theme.js";
 
 export class Panel extends Container {
   override render(width: number): string[] {
@@ -14,9 +14,9 @@ export class Panel extends Container {
     const contentWidth = width - 2;
     const content = super.render(contentWidth);
     return [
-      border(`╭${"─".repeat(contentWidth)}╮`),
+      THEME.border(`╭${"─".repeat(contentWidth)}╮`),
       ...content.map((line) => borderedLine(line, contentWidth)),
-      border(`╰${"─".repeat(contentWidth)}╯`),
+      THEME.border(`╰${"─".repeat(contentWidth)}╯`),
     ];
   }
 }
@@ -24,7 +24,7 @@ export class Panel extends Container {
 export function borderedLine(
   line: string,
   width: number,
-  frame: (text: string) => string = border,
+  frame: (text: string) => string = THEME.border,
 ): string {
   const fitted = truncateToWidth(line, width, "");
   const padding = " ".repeat(Math.max(0, width - visibleWidth(fitted)));

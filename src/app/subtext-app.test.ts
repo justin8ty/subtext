@@ -127,7 +127,7 @@ describe("SubtextApp", () => {
     expect(stripTerminalSequences(rendered)).toContain("01:05  A later supporting example.");
     expect(rendered).toContain(`${SOURCE_URL}&t=65s`);
     expect(rendered).toContain("\u001b[1;36mSubtext\u001b[0m");
-    expect(rendered).toContain(`\u001b[1m${TRANSCRIPT.video.title}\u001b[0m`);
+    expect(rendered).toContain(`\u001b[1;36m${TRANSCRIPT.video.title}\u001b[0m`);
     expect(rendered).toContain("\u001b[4m\u001b[2;36m01:05\u001b[0m\u001b[0m");
     expect(rendered).toContain("\u001b[32mTranscript and Summary completed.\u001b[0m");
     expect(stripTerminalSequences(rendered)).toContain("Takeaways");
@@ -424,7 +424,10 @@ describe("SubtextApp", () => {
     await vi.waitFor(() => expect(library.listCalls).toBe(1));
     await vi.waitFor(() => expect(renderedText(app)).toContain("Artifact Library"));
     expect(renderedText(app)).toContain("[CAPTIONS] [SUMMARY]");
-    expect(app.render(80).join("\n")).toContain("\u001b[1;30;46m");
+    const styledLibrary = app.render(80).join("\n");
+    expect(styledLibrary).toContain("\u001b[36m[CAPTIONS]\u001b[0m");
+    expect(styledLibrary).toContain("\u001b[32m[SUMMARY]\u001b[0m");
+    expect(styledLibrary).toContain("\u001b[1;30;46m");
     expect(tui.hasOverlay()).toBe(false);
     terminal.send("\r");
     terminal.send("\r");

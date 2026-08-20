@@ -1,79 +1,53 @@
 import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@earendil-works/pi-tui";
 
-export type UiTone = "accent" | "muted" | "success" | "warning" | "error";
-
 const RESET = "\u001b[0m";
 
-export const bold = style("1");
-export const dim = style("2");
-export const italic = style("3");
-export const underline = style("4");
-export const strikethrough = style("9");
-export const accent = style("36");
-export const mutedAccent = style("2;36");
-export const active = style("1;36");
-export const border = style("2;37");
-export const selection = style("1;30;46");
-export const success = style("32");
-export const warning = style("33");
-export const error = style("31");
+export const THEME = {
+  accent: style("36"),
+  muted: style("2"),
+  success: style("32"),
+  warning: style("33"),
+  error: style("31"),
+  border: style("2;37"),
+  heading: style("1;36"),
+  active: style("1;36"),
+  selected: style("1;30;46"),
+  timestamp: style("2;36"),
+  bold: style("1"),
+  italic: style("3"),
+  underline: style("4"),
+  strikethrough: style("9"),
+} as const;
 
 export const SELECT_THEME: SelectListTheme = {
-  selectedPrefix: accent,
-  selectedText: selection,
-  description: dim,
-  scrollInfo: dim,
-  noMatch: warning,
+  selectedPrefix: THEME.accent,
+  selectedText: THEME.selected,
+  description: THEME.muted,
+  scrollInfo: THEME.muted,
+  noMatch: THEME.warning,
 };
 
 export const EDITOR_THEME: EditorTheme = {
-  borderColor: accent,
+  borderColor: THEME.accent,
   selectList: SELECT_THEME,
 };
 
 export const MARKDOWN_THEME: MarkdownTheme = {
-  heading: accent,
-  link: accent,
-  linkUrl: dim,
-  code: warning,
-  codeBlock: dim,
-  codeBlockBorder: mutedAccent,
-  quote: dim,
-  quoteBorder: mutedAccent,
-  hr: dim,
-  listBullet: accent,
-  bold,
-  italic,
-  strikethrough,
-  underline,
+  heading: THEME.heading,
+  link: THEME.accent,
+  linkUrl: THEME.muted,
+  code: THEME.warning,
+  codeBlock: THEME.muted,
+  codeBlockBorder: THEME.timestamp,
+  quote: THEME.muted,
+  quoteBorder: THEME.timestamp,
+  hr: THEME.muted,
+  listBullet: THEME.accent,
+  bold: THEME.bold,
+  italic: THEME.italic,
+  strikethrough: THEME.strikethrough,
+  underline: THEME.underline,
 };
-
-export function tone(text: string, value: UiTone): string {
-  switch (value) {
-    case "accent":
-      return accent(text);
-    case "success":
-      return success(text);
-    case "warning":
-      return warning(text);
-    case "error":
-      return error(text);
-    case "muted":
-      return dim(text);
-  }
-}
-
-export function keyHint(parts: readonly [key: string, description: string][]): string {
-  return parts.map(formatKeyHint).join(dim(" · "));
-}
-
-export function keyHintLines(parts: readonly [key: string, description: string][]): string {
-  return parts.map(formatKeyHint).join("\n");
-}
-
-function formatKeyHint([key, description]: readonly [string, string]): string {
-  return `${accent(key)} ${dim(description)}`;
-}
 
 function style(code: string): (text: string) => string {
   return (text) => (text === "" ? "" : `\u001b[${code}m${text}${RESET}`);

@@ -19,8 +19,9 @@ import type {
 } from "../config/application-configuration.js";
 import type { SummaryDetail } from "../config/application-settings.js";
 import type { AsrQuality } from "../runtime/runtime-manifest.js";
+import { KeyHints, SectionHeader, StatusLine, type KeyHint } from "./design-system.js";
 import { Panel } from "./panel.js";
-import { bold, dim, error, SELECT_THEME } from "./theme.js";
+import { SELECT_THEME } from "./theme.js";
 
 type WizardStep = "provider" | "authentication" | "model" | "detail" | "asr" | "saving";
 type MutableConfigurationUpdate = {
@@ -107,7 +108,7 @@ export class ConfigurationWizard extends Panel implements Focusable {
       this.selectedModel = configuredModel ?? "";
       this.showAuthentication();
     };
-    this.setScreen("Summary provider", list, "↑↓ navigate · enter select · esc close");
+    this.setScreen("Summary provider", list, navigationHints("select"));
   }
 
   private showAuthentication(): void {
@@ -117,11 +118,10 @@ export class ConfigurationWizard extends Panel implements Focusable {
       this.apiKey = value.trim() === "" ? undefined : value.trim();
       this.showModel();
     };
-    this.setScreen(
-      `API key for ${this.selectedProvider}`,
-      input,
-      "Key is hidden · leave blank to keep existing/environment auth · enter continue",
-    );
+    this.setScreen(`API key for ${this.selectedProvider}`, input, [
+      ["Enter", "continue"],
+      ["Blank", "keep existing or environment authentication"],
+    ]);
   }
 
   private showModel(): void {
@@ -144,7 +144,7 @@ export class ConfigurationWizard extends Panel implements Focusable {
       this.selectedModel = item.value;
       this.showDetail();
     };
-    this.setScreen("Summary model", list, "↑↓ navigate · enter select · esc close");
+    this.setScreen("Summary model", list, navigationHints("select"));
   }
 
   private showDetail(): void {
@@ -161,7 +161,7 @@ export class ConfigurationWizard extends Panel implements Focusable {
       items.findIndex((item) => item.value === current),
     );
     list.onSelect = (item) => this.showAsr(parseSummaryDetail(item.value));
-    this.setScreen("Summary detail", list, "↑↓ navigate · enter select · esc close");
+    this.setScreen("Summary detail", list, navigationHints("select"));
   }
 
   private showAsr(summaryDetail: SummaryDetail): void {
@@ -179,12 +179,12 @@ export class ConfigurationWizard extends Panel implements Focusable {
     list.onSelect = (item) => {
       void this.save(summaryDetail, parseAsrQuality(item.value));
     };
-    this.setScreen("ASR quality", list, "↑↓ navigate · enter save · esc close");
+    this.setScreen("ASR quality", list, navigationHints("save"));
   }
 
   private async save(summaryDetail: SummaryDetail, asrQuality: AsrQuality): Promise<void> {
     this.step = "saving";
-    this.setScreen("Saving Options…", new Text("Please wait.", 0, 0), "");
+    this.setScreen("Saving Options…", new Text("Please wait.", 0, 0), []);
     try {
       const update: MutableConfigurationUpdate = {
         summaryProvider: this.selectedProvider,
@@ -203,7 +203,7 @@ export class ConfigurationWizard extends Panel implements Focusable {
     this.tui.requestRender();
   }
 
-  private setScreen(title: string, component: Component, help: string): void {
+  private setScreen(title: string, component: Component, hints: readonly KeyHint[]): void {
     if (isFocusableComponent(this.activeComponent)) {
       this.activeComponent.focused = false;
     }
@@ -213,19 +213,18 @@ export class ConfigurationWizard extends Panel implements Focusable {
     }
     this.clear();
     this.addChild(
-      new Text(bold(this.options.required ? "Set up Subtext" : "Subtext Options"), 1, 0),
+      new SectionHeader(this.options.required ? "Set up Subtext" : "Subtext Options", title, 1),
     );
-    this.addChild(new Text(dim(title), 1, 0));
     this.addChild(new Spacer(1));
     if (this.message !== "") {
-      this.addChild(new Text(error(this.message), 1, 0));
+      this.addChild(new StatusLine(this.message, "error", 1));
       this.addChild(new Spacer(1));
       this.message = "";
     }
     this.addChild(component);
-    if (help !== "") {
+    if (hints.length > 0) {
       this.addChild(new Spacer(1));
-      this.addChild(new Text(dim(help), 1, 0));
+      this.addChild(new KeyHints(hints, { paddingX: 1 }));
     }
     this.tui.requestRender();
   }
@@ -266,6 +265,14 @@ function selectInitial(list: SelectList, index: number): void {
 
 function isFocusableComponent(component: Component): component is Component & Focusable {
   return "focused" in component;
+}
+
+function navigationHints(action: "select" | "save"): readonly KeyHint[] {
+  return [
+    ["↑↓", "navigate"],
+    ["Enter", action],
+    ["Esc", "close"],
+  ];
 }
 
 function parseSummaryDetail(value: string): SummaryDetail {

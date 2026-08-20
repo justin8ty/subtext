@@ -1,7 +1,8 @@
 import { Key, Spacer, Text, matchesKey } from "@earendil-works/pi-tui";
 
+import { KeyHints, SectionHeader } from "./design-system.js";
 import { Panel } from "./panel.js";
-import { bold, dim, keyHintLines } from "./theme.js";
+import { THEME } from "./theme.js";
 
 export class HelpView extends Panel {
   private readonly close: () => void;
@@ -9,24 +10,23 @@ export class HelpView extends Panel {
   constructor(close: () => void) {
     super();
     this.close = close;
-    this.addChild(new Text(bold("Subtext Help"), 1, 0));
+    this.addChild(new SectionHeader("Subtext Help", "Keyboard shortcuts and app basics", 1));
     this.addChild(new Spacer(1));
     this.addChild(new Text("Paste a YouTube URL and press Enter.", 1, 0));
     this.addChild(new Spacer(1));
     this.addChild(
-      new Text(
-        keyHintLines([
+      new KeyHints(
+        [
           ["/", "List App Commands below the editor"],
           ["R", "Regenerate the latest Summary when the editor is empty"],
           ["Esc", "Cancel active processing"],
           ["Ctrl+C", "Cancel active processing, or quit while idle"],
-        ]),
-        1,
-        0,
+        ],
+        { layout: "stacked", paddingX: 1 },
       ),
     );
     this.addChild(new Spacer(1));
-    this.addChild(new Text(dim("Enter or Esc closes Help."), 1, 0));
+    this.addChild(new Text(THEME.muted("Enter or Esc closes Help."), 1, 0));
   }
 
   handleInput(data: string): void {
