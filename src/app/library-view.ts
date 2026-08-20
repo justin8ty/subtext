@@ -270,16 +270,16 @@ function entryItem(entry: ArtifactLibraryEntry): SelectItem {
   return {
     value: entry.videoId,
     label: entry.title,
-    description: `${origin} ${summary}  ${entry.languageCode}${captionKind === "" ? "" : ` · ${captionKind}`}`,
+    description: `${origin} ${summary}  ${entry.languageCode.toUpperCase()}${captionKind === "" ? "" : ` · ${captionKind}`}`,
   };
 }
 
 function captionKindLabel(origin: ArtifactLibraryEntry["transcriptOrigin"]): string {
   if (origin === "creator-caption") {
-    return "creator";
+    return "Creator";
   }
   if (origin === "automatic-caption") {
-    return "automatic";
+    return "Automatic";
   }
   return "";
 }

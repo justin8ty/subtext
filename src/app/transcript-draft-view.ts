@@ -32,7 +32,7 @@ export class TranscriptDraftView implements Component {
     }
 
     return [
-      ...new SectionHeader(this.video.title, "Transcript Draft · ASR · incomplete").render(width),
+      ...new SectionHeader(this.video.title, "Transcript Draft · ASR · Incomplete").render(width),
       "",
       ...this.segments.flatMap((segment) =>
         renderTimestampedSegment(segment, this.video.canonicalUrl, width),

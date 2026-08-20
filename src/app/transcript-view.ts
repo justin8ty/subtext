@@ -24,7 +24,7 @@ export class TranscriptView implements Component {
 
     const header = new SectionHeader(
       this.transcript.video.title,
-      `Transcript · ${this.transcript.languageCode} · ${provenanceLabel(this.transcript)}`,
+      `Transcript · ${this.transcript.languageCode.toUpperCase()} · ${provenanceLabel(this.transcript)}`,
     );
     return [
       ...header.render(width),
@@ -82,10 +82,10 @@ export function formatTimestamp(startMs: number): string {
 
 function provenanceLabel(transcript: Transcript): string {
   if (transcript.provenance.origin === "creator-caption") {
-    return "creator captions";
+    return "Creator Captions";
   }
   if (transcript.provenance.origin === "automatic-caption") {
-    return "automatic captions";
+    return "Automatic Captions";
   }
   return "ASR";
 }

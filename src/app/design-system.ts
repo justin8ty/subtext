@@ -37,22 +37,6 @@ export class SectionHeader implements Component {
   invalidate(): void {}
 }
 
-export class SectionLabel implements Component {
-  readonly label: string;
-  private readonly paddingX: number;
-
-  constructor(label: string, paddingX = 0) {
-    this.label = label;
-    this.paddingX = paddingX;
-  }
-
-  render(width: number): string[] {
-    return renderPadded(THEME.accent(this.label.toUpperCase()), width, this.paddingX);
-  }
-
-  invalidate(): void {}
-}
-
 export class KeyHints implements Component {
   readonly hints: readonly KeyHint[];
   private readonly layout: "inline" | "stacked";

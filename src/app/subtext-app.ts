@@ -28,6 +28,7 @@ import {
   resolveAppCommand,
   type AppCommandDestination,
 } from "./command-completion.js";
+import { BrandHeader } from "./brand-header.js";
 import { ConfigurationWizard } from "./configuration-wizard.js";
 import { HelpView } from "./help-view.js";
 import {
@@ -37,7 +38,7 @@ import {
   TranscriptExportView,
   type LibraryAction,
 } from "./library-view.js";
-import { KeyHints, SectionHeader, SectionLabel, StatusLine, type UiTone } from "./design-system.js";
+import { KeyHints, StatusLine, type UiTone } from "./design-system.js";
 import { ProcessingStatusView } from "./processing-status-view.js";
 import { SummaryView } from "./summary-view.js";
 import { TranscriptDraftView } from "./transcript-draft-view.js";
@@ -99,11 +100,9 @@ export class SubtextApp extends Container {
     this.editor.setAutocompleteProvider(new AppCommandCompletion());
     this.editor.onSubmit = (sourceUrl) => this.submit(sourceUrl);
 
-    this.addChild(new SectionHeader("Subtext", "Understand a YouTube video without watching it."));
+    this.addChild(new BrandHeader());
     this.addChild(new Spacer(1));
     this.addChild(this.history);
-    this.addChild(new Spacer(1));
-    this.addChild(new SectionLabel("Source Video"));
     this.addChild(new Spacer(1));
     this.addChild(this.editor);
     this.addChild(this.editorContext);

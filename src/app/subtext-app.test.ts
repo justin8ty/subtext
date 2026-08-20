@@ -96,7 +96,14 @@ describe("SubtextApp", () => {
 
     const rendered = app.render(80).join("\n");
     const plain = stripTerminalSequences(rendered);
-    expect(plain).toContain("SOURCE VIDEO");
+    expect(plain).toContain("◆ SUBTEXT");
+    expect(plain).toContain("• Get YouTube transcripts instantly");
+    expect(plain).toContain("• Summarize videos with AI");
+    expect(plain).toContain("• Export transcripts and summaries");
+    expect(plain).toContain(
+      "• Automatic Speech Recognition supported for videos without transcript",
+    );
+    expect(plain).not.toContain("SOURCE VIDEO");
     expect(plain).toContain("Paste a YouTube URL…");
     expect(plain).not.toContain("● Ready");
     expect(plain).not.toContain("Public, completed YouTube videos only · Enter to process");
@@ -132,7 +139,7 @@ describe("SubtextApp", () => {
     const rendered = app.render(80).join("\n");
     expect(stripTerminalSequences(rendered)).toContain("01:05  A later supporting example.");
     expect(rendered).toContain(`${SOURCE_URL}&t=65s`);
-    expect(rendered).toContain("\u001b[1;36mSubtext\u001b[0m");
+    expect(rendered).toContain("\u001b[36m◆\u001b[0m \u001b[1;36mSUBTEXT\u001b[0m");
     expect(rendered).toContain(`\u001b[1;36m${TRANSCRIPT.video.title}\u001b[0m`);
     expect(rendered).toContain("\u001b[4m\u001b[2;36m01:05\u001b[0m\u001b[0m");
     expect(rendered).toContain("\u001b[32mTranscript and Summary completed.\u001b[0m");
@@ -198,7 +205,7 @@ describe("SubtextApp", () => {
     terminal.send("\r");
 
     await vi.waitFor(() =>
-      expect(renderedText(app)).toContain("Transcript Draft · ASR · incomplete"),
+      expect(renderedText(app)).toContain("Transcript Draft · ASR · Incomplete"),
     );
     expect(renderedText(app)).toContain("The opening idea.");
     expect(renderedText(app)).not.toContain("Overview");
@@ -206,7 +213,7 @@ describe("SubtextApp", () => {
     processing.complete();
 
     await vi.waitFor(() => expect(renderedText(app)).toContain("Overview"));
-    expect(renderedText(app)).not.toContain("Transcript Draft · ASR · incomplete");
+    expect(renderedText(app)).not.toContain("Transcript Draft · ASR · Incomplete");
     expect(renderedText(app).match(/The opening idea\./gu)).toHaveLength(1);
     app.stop();
   });
@@ -224,7 +231,7 @@ describe("SubtextApp", () => {
     await vi.waitFor(() =>
       expect(renderedText(app)).toContain("Incomplete — ASR transcription was cancelled."),
     );
-    expect(renderedText(app)).toContain("Transcript Draft · ASR · incomplete");
+    expect(renderedText(app)).toContain("Transcript Draft · ASR · Incomplete");
     expect(renderedText(app)).toContain("The opening idea.");
     app.stop();
   });
@@ -430,6 +437,7 @@ describe("SubtextApp", () => {
     await vi.waitFor(() => expect(library.listCalls).toBe(1));
     await vi.waitFor(() => expect(renderedText(app)).toContain("Artifact Library"));
     expect(renderedText(app)).toContain("[CAPTIONS] [SUMMARY]");
+    expect(renderedText(app)).toContain("EN · Creator");
     const styledLibrary = app.render(80).join("\n");
     expect(styledLibrary).toContain("\u001b[36m[CAPTIONS]\u001b[0m");
     expect(styledLibrary).toContain("\u001b[32m[SUMMARY]\u001b[0m");
@@ -598,6 +606,44 @@ describe("TranscriptView", () => {
     const lines = new TranscriptView(TRANSCRIPT).render(width);
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+  });
+
+  it("title-cases provenance and uppercases language metadata", () => {
+    const automaticTranscript: Transcript = {
+      ...TRANSCRIPT,
+      languageCode: "en-us",
+      provenance: {
+        origin: "automatic-caption",
+        languageCode: "en-us",
+        rawArtifact: "caption-track.json3",
+        normalization: [
+          "whitespace-normalization",
+          "rolling-caption-deduplication",
+          "timing-repair",
+          "cue-boundary-repair",
+        ],
+      },
+    };
+    const asrTranscript: Transcript = {
+      ...TRANSCRIPT,
+      languageCode: "de",
+      provenance: {
+        origin: "asr",
+        languageCode: "de",
+        model: "fixture-model",
+        normalization: ["whitespace-normalization", "timing-repair"],
+      },
+    };
+
+    expect(stripTerminalSequences(new TranscriptView(TRANSCRIPT).render(80).join("\n"))).toContain(
+      "Transcript · EN · Creator Captions",
+    );
+    expect(
+      stripTerminalSequences(new TranscriptView(automaticTranscript).render(80).join("\n")),
+    ).toContain("Transcript · EN-US · Automatic Captions");
+    expect(
+      stripTerminalSequences(new TranscriptView(asrTranscript).render(80).join("\n")),
+    ).toContain("Transcript · DE · ASR");
   });
 
   it("aligns wrapped Transcript text beneath the content instead of the timestamp", () => {
