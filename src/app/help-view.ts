@@ -1,15 +1,18 @@
-import { Container, Key, Text, matchesKey } from "@earendil-works/pi-tui";
+import { Key, Spacer, Text, matchesKey } from "@earendil-works/pi-tui";
 
+import { Panel } from "./panel.js";
 import { bold, dim, keyHintLines } from "./theme.js";
 
-export class HelpView extends Container {
+export class HelpView extends Panel {
   private readonly close: () => void;
 
   constructor(close: () => void) {
     super();
     this.close = close;
     this.addChild(new Text(bold("Subtext Help"), 1, 0));
+    this.addChild(new Spacer(1));
     this.addChild(new Text("Paste a YouTube URL and press Enter.", 1, 0));
+    this.addChild(new Spacer(1));
     this.addChild(
       new Text(
         keyHintLines([
@@ -22,6 +25,7 @@ export class HelpView extends Container {
         0,
       ),
     );
+    this.addChild(new Spacer(1));
     this.addChild(new Text(dim("Enter or Esc closes Help."), 1, 0));
   }
 

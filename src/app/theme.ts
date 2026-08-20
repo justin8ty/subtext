@@ -12,13 +12,15 @@ export const strikethrough = style("9");
 export const accent = style("36");
 export const mutedAccent = style("2;36");
 export const active = style("1;36");
+export const border = style("2;37");
+export const selection = style("1;30;46");
 export const success = style("32");
 export const warning = style("33");
 export const error = style("31");
 
 export const SELECT_THEME: SelectListTheme = {
   selectedPrefix: accent,
-  selectedText: active,
+  selectedText: selection,
   description: dim,
   scrollInfo: dim,
   noMatch: warning,

@@ -1,9 +1,9 @@
 import {
   CURSOR_MARKER,
-  Container,
   Input,
   Key,
   SelectList,
+  Spacer,
   Text,
   matchesKey,
   truncateToWidth,
@@ -19,6 +19,7 @@ import type {
 } from "../config/application-configuration.js";
 import type { SummaryDetail } from "../config/application-settings.js";
 import type { AsrQuality } from "../runtime/runtime-manifest.js";
+import { Panel } from "./panel.js";
 import { bold, dim, error, SELECT_THEME } from "./theme.js";
 
 type WizardStep = "provider" | "authentication" | "model" | "detail" | "asr" | "saving";
@@ -32,7 +33,7 @@ export interface ConfigurationWizardOptions {
   readonly onCancel: () => void;
 }
 
-export class ConfigurationWizard extends Container implements Focusable {
+export class ConfigurationWizard extends Panel implements Focusable {
   private readonly tui: TUI;
   private readonly configuration: ApplicationConfigurationAccess;
   private readonly options: ConfigurationWizardOptions;
@@ -214,13 +215,16 @@ export class ConfigurationWizard extends Container implements Focusable {
     this.addChild(
       new Text(bold(this.options.required ? "Set up Subtext" : "Subtext Options"), 1, 0),
     );
-    this.addChild(new Text(bold(title), 1, 0));
+    this.addChild(new Text(dim(title), 1, 0));
+    this.addChild(new Spacer(1));
     if (this.message !== "") {
       this.addChild(new Text(error(this.message), 1, 0));
+      this.addChild(new Spacer(1));
       this.message = "";
     }
     this.addChild(component);
     if (help !== "") {
+      this.addChild(new Spacer(1));
       this.addChild(new Text(dim(help), 1, 0));
     }
     this.tui.requestRender();

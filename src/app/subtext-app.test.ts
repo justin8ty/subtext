@@ -81,6 +81,27 @@ const TRANSCRIPT: Transcript = {
 };
 
 describe("SubtextApp", () => {
+  it("renders a focused URL editor with placeholder text and a contextual hint", () => {
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(
+      tui,
+      new ImmediateProcessing({
+        status: "needs-input",
+        reason: "invalid-source-url",
+        message: "Fixture outcome.",
+      }),
+    );
+    app.start();
+
+    const rendered = app.render(80).join("\n");
+    const plain = stripTerminalSequences(rendered);
+    expect(plain).toContain("Paste a YouTube URL…");
+    expect(plain).toContain("Public, completed YouTube videos only · Enter to process");
+    expect(rendered).toContain("\u001b[36m╭");
+    app.stop();
+  });
+
   it("submits a URL and prints a timestamp-linked Transcript and Summary", async () => {
     const processing = new ImmediateProcessing({
       status: "completed",
@@ -135,6 +156,10 @@ describe("SubtextApp", () => {
     const styled = app.render(80).join("\n");
     expect(styled).toContain("\u001b[33m✓ No eligible Caption Track found\u001b[0m");
     expect(styled).toContain("\u001b[1;36m↓ Downloading Default Audio\u001b[0m");
+    expect(styled).toContain("\u001b[2;37m╭");
+    expect(stripTerminalSequences(styled)).toContain(
+      "Processing active · New URLs unavailable · / App Commands remain available",
+    );
     app.stop();
   });
 
@@ -398,6 +423,8 @@ describe("SubtextApp", () => {
 
     await vi.waitFor(() => expect(library.listCalls).toBe(1));
     await vi.waitFor(() => expect(renderedText(app)).toContain("Artifact Library"));
+    expect(renderedText(app)).toContain("[CAPTIONS] [SUMMARY]");
+    expect(app.render(80).join("\n")).toContain("\u001b[1;30;46m");
     expect(tui.hasOverlay()).toBe(false);
     terminal.send("\r");
     terminal.send("\r");
@@ -541,6 +568,8 @@ describe("SubtextApp", () => {
     terminal.send("/");
     await vi.waitFor(() => expect(renderedText(app)).toContain("Browse completed Video Artifacts"));
     expect(renderedText(app)).toContain("Configure Summary and ASR preferences");
+    expect(renderedText(app)).toContain("├");
+    expect(app.render(80).join("\n")).toContain("\u001b[1;30;46m");
     expect(tui.hasOverlay()).toBe(false);
 
     typeText(terminal, "settings");

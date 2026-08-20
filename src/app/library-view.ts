@@ -1,8 +1,8 @@
 import {
-  Container,
   Input,
   Key,
   SelectList,
+  Spacer,
   Text,
   matchesKey,
   type Focusable,
@@ -12,6 +12,7 @@ import {
 
 import type { ArtifactLibraryEntry } from "../artifacts/artifact-library.js";
 import type { TranscriptExportFormat } from "../artifacts/transcript-export.js";
+import { Panel } from "./panel.js";
 import { bold, dim, SELECT_THEME, warning } from "./theme.js";
 
 export type LibraryAction =
@@ -23,7 +24,7 @@ export type LibraryAction =
   | "refresh"
   | "delete";
 
-export class LibraryView extends Container implements Focusable {
+export class LibraryView extends Panel implements Focusable {
   private readonly query = new Input();
   private readonly list: SelectList;
   private readonly tui: TUI;
@@ -46,9 +47,15 @@ export class LibraryView extends Container implements Focusable {
     this.list = new SelectList(entries.map(entryItem), Math.min(10, entries.length), SELECT_THEME);
 
     this.addChild(new Text(bold("Artifact Library"), 1, 0));
-    this.addChild(new Text(dim("Search"), 1, 0));
+    this.addChild(
+      new Text(dim(`${entries.length} saved Source Video${entries.length === 1 ? "" : "s"}`), 1, 0),
+    );
+    this.addChild(new Spacer(1));
+    this.addChild(new Text(dim("Search library"), 1, 0));
     this.addChild(this.query);
+    this.addChild(new Spacer(1));
     this.addChild(this.list);
+    this.addChild(new Spacer(1));
     this.addChild(new Text(dim("↑↓ navigate · enter actions · esc close"), 1, 0));
 
     this.list.onSelect = (item) => {
@@ -91,7 +98,7 @@ interface MenuItem<Value extends string> extends SelectItem {
   readonly value: Value;
 }
 
-class MenuView<Value extends string> extends Container {
+class MenuView<Value extends string> extends Panel {
   private readonly list: SelectList;
   private readonly tui: TUI;
   private readonly cancel: () => void;
@@ -119,7 +126,9 @@ class MenuView<Value extends string> extends Container {
     };
     this.list.onCancel = cancel;
     this.addChild(new Text(bold(title), 1, 0));
+    this.addChild(new Spacer(1));
     this.addChild(this.list);
+    this.addChild(new Spacer(1));
     this.addChild(new Text(dim("↑↓ navigate · enter select · esc close"), 1, 0));
   }
 
@@ -191,7 +200,7 @@ export class TranscriptExportView extends MenuView<TranscriptExportFormat> {
   }
 }
 
-export class DeleteConfirmationView extends Container {
+export class DeleteConfirmationView extends Panel {
   private readonly confirm: () => void;
   private readonly cancel: () => void;
 
@@ -201,9 +210,11 @@ export class DeleteConfirmationView extends Container {
     this.cancel = cancel;
     this.addChild(new Text(warning("Delete Video Artifacts?"), 1, 0));
     this.addChild(new Text(bold(entry.title), 1, 0));
+    this.addChild(new Spacer(1));
     this.addChild(
       new Text(dim("This deletes the Transcript, source evidence, Summary, and exports."), 1, 0),
     );
+    this.addChild(new Spacer(1));
     this.addChild(new Text(dim("Y delete · N or esc cancel"), 1, 0));
   }
 
@@ -219,19 +230,26 @@ export class DeleteConfirmationView extends Container {
 }
 
 function entryItem(entry: ArtifactLibraryEntry): SelectItem {
+  const origin = entry.transcriptOrigin === "asr" ? badge("ASR") : badge("CAPTIONS");
+  const summary = entry.hasSummary ? badge("SUMMARY") : badge("NO SUMMARY");
+  const captionKind = captionKindLabel(entry.transcriptOrigin);
   return {
     value: entry.videoId,
     label: entry.title,
-    description: `${entry.languageCode} · ${originLabel(entry.transcriptOrigin)} · ${entry.hasSummary ? "Summary" : "Unsummarized"}`,
+    description: `${origin} ${summary}  ${entry.languageCode}${captionKind === "" ? "" : ` · ${captionKind}`}`,
   };
 }
 
-function originLabel(origin: ArtifactLibraryEntry["transcriptOrigin"]): string {
+function badge(label: string): string {
+  return `[${label}]`;
+}
+
+function captionKindLabel(origin: ArtifactLibraryEntry["transcriptOrigin"]): string {
   if (origin === "creator-caption") {
-    return "creator captions";
+    return "creator";
   }
   if (origin === "automatic-caption") {
-    return "automatic captions";
+    return "automatic";
   }
-  return "ASR";
+  return "";
 }

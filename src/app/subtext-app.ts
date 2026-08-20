@@ -1,6 +1,5 @@
 import {
   Container,
-  Editor,
   Key,
   Spacer,
   Text,
@@ -41,8 +40,9 @@ import {
 } from "./library-view.js";
 import { ProcessingStatusView } from "./processing-status-view.js";
 import { SummaryView } from "./summary-view.js";
-import { active, dim, EDITOR_THEME, keyHint, tone, type UiTone } from "./theme.js";
+import { active, dim, keyHint, tone, type UiTone } from "./theme.js";
 import { TranscriptDraftView } from "./transcript-draft-view.js";
+import { UrlEditor } from "./url-editor.js";
 import { TranscriptView } from "./transcript-view.js";
 
 export interface SourceVideoProcessing {
@@ -78,7 +78,12 @@ export class SubtextApp extends Container {
   private readonly externalOpener: ExternalOpener | undefined;
   private readonly history = new Container();
   private readonly status = new Text(dim("Ready. Paste a YouTube URL and press Enter."), 0, 0);
-  private readonly editor: Editor;
+  private readonly editorHint = new Text(
+    dim("Public, completed YouTube videos only · Enter to process"),
+    1,
+    0,
+  );
+  private readonly editor: UrlEditor;
   private readonly commandPanel = new Container();
   private removeInputListener: (() => void) | null = null;
   private activeProcessing: ActiveProcessing | null = null;
@@ -93,7 +98,7 @@ export class SubtextApp extends Container {
     this.configuration = options.configuration;
     this.library = options.library;
     this.externalOpener = options.externalOpener;
-    this.editor = new Editor(tui, EDITOR_THEME, { paddingX: 1, autocompleteMaxVisible: 4 });
+    this.editor = new UrlEditor(tui, { paddingX: 1, autocompleteMaxVisible: 4 });
     this.editor.setAutocompleteProvider(new AppCommandCompletion());
     this.editor.onSubmit = (sourceUrl) => this.submit(sourceUrl);
 
@@ -103,6 +108,7 @@ export class SubtextApp extends Container {
     this.addChild(this.history);
     this.addChild(this.status);
     this.addChild(this.editor);
+    this.addChild(this.editorHint);
     this.addChild(this.commandPanel);
     this.addChild(
       new Text(
@@ -151,6 +157,7 @@ export class SubtextApp extends Container {
       this.activeProcessing = null;
     }
 
+    this.setEditorProcessing(false);
     this.setStatus("Stopped.", "muted");
     this.tui.renderNow();
     this.tui.stop();
@@ -490,6 +497,7 @@ export class SubtextApp extends Container {
     this.appendComponent(stageView);
     this.nextProcessingId += 1;
     this.activeProcessing = active;
+    this.setEditorProcessing(true);
     return active;
   }
 
@@ -498,6 +506,7 @@ export class SubtextApp extends Container {
       return false;
     }
     this.activeProcessing = null;
+    this.setEditorProcessing(false);
     return true;
   }
 
@@ -780,6 +789,17 @@ export class SubtextApp extends Container {
     this.commandPanel.clear();
     this.restoreEditorFocus();
     this.tui.requestRender();
+  }
+
+  private setEditorProcessing(processing: boolean): void {
+    this.editor.setProcessing(processing);
+    this.editorHint.setText(
+      dim(
+        processing
+          ? "Processing active · New URLs unavailable · / App Commands remain available"
+          : "Public, completed YouTube videos only · Enter to process",
+      ),
+    );
   }
 
   private setStatus(message: string, statusTone: UiTone): void {
