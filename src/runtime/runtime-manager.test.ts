@@ -29,27 +29,35 @@ afterEach(async () => {
 });
 
 describe("RuntimeManager", () => {
-  it("downloads, verifies, and reuses every pinned runtime package", async () => {
+  it("prepares YouTube tools first and defers reusable ASR assets", async () => {
     const rootDirectory = await temporaryRuntime();
     const manifest = fixtureManifest("v1");
     const http = new MemoryRuntimeHttpClient(downloads("v1"));
     const progress: string[] = [];
     const manager = new RuntimeManager({ rootDirectory, manifest, httpClient: http });
 
-    const first = await manager.prepare({
+    const firstYoutube = await manager.prepareYoutube({
       onProgress: (event) => progress.push(`${event.phase}:${event.packageId}`),
     });
-    const second = await manager.prepare();
+    const secondYoutube = await manager.prepareYoutube();
 
-    expect(first).toEqual(second);
-    expect(first.ytDlpExecutable).toContain(join("tools", "yt-dlp", "v1"));
-    expect(first.ffmpegDirectory).toBe(dirname(first.ffmpegExecutable));
-    expect(first.whisperExecutable).toContain("whisper-cli.exe");
-    expect(first.modelName).toBe("fixture-balanced");
-    await expect(readFile(first.ytDlpExecutable, "utf8")).resolves.toBe("yt-dlp");
-    await expect(readFile(first.ffmpegExecutable, "utf8")).resolves.toBe("ffmpeg");
-    await expect(readFile(first.whisperExecutable, "utf8")).resolves.toBe("whisper");
-    await expect(readFile(first.modelPath, "utf8")).resolves.toBe("model");
+    expect(firstYoutube).toEqual(secondYoutube);
+    expect(firstYoutube.ytDlpExecutable).toContain(join("tools", "yt-dlp", "v1"));
+    expect(firstYoutube.ffmpegDirectory).toBe(dirname(firstYoutube.ffmpegExecutable));
+    await expect(readFile(firstYoutube.ytDlpExecutable, "utf8")).resolves.toBe("yt-dlp");
+    await expect(readFile(firstYoutube.ffmpegExecutable, "utf8")).resolves.toBe("ffmpeg");
+    expect(http.requestCount).toBe(2);
+
+    const firstAsr = await manager.prepareAsr({
+      onProgress: (event) => progress.push(`${event.phase}:${event.packageId}`),
+    });
+    const secondAsr = await manager.prepareAsr();
+
+    expect(firstAsr).toEqual(secondAsr);
+    expect(firstAsr.whisperExecutable).toContain("whisper-cli.exe");
+    expect(firstAsr.modelName).toBe("fixture-balanced");
+    await expect(readFile(firstAsr.whisperExecutable, "utf8")).resolves.toBe("whisper");
+    await expect(readFile(firstAsr.modelPath, "utf8")).resolves.toBe("model");
     expect(http.requestCount).toBe(4);
     expect(progress).toContain("installing:ffmpeg");
     expect(progress).toContain("ready:model-balanced");
@@ -60,14 +68,14 @@ describe("RuntimeManager", () => {
     const manifest = fixtureManifest("v1");
     const http = new MemoryRuntimeHttpClient(downloads("v1"));
     const manager = new RuntimeManager({ rootDirectory, manifest, httpClient: http });
-    const installed = await manager.prepare();
+    const installed = await manager.prepareYoutube();
     await writeFile(installed.ytDlpExecutable, "broken", "utf8");
 
-    const repaired = await manager.prepare({ mode: "repair" });
+    const repaired = await manager.prepareYoutube({ mode: "repair" });
 
     await expect(readFile(repaired.ytDlpExecutable, "utf8")).resolves.toBe("yt-dlp");
     expect(http.requestsFor("https://runtime.test/v1/yt-dlp.exe")).toBe(2);
-    expect(http.requestCount).toBe(5);
+    expect(http.requestCount).toBe(3);
   });
 
   it("installs updated pins transactionally and removes obsolete versions on update", async () => {
@@ -77,12 +85,12 @@ describe("RuntimeManager", () => {
       rootDirectory,
       manifest: fixtureManifest("v1"),
       httpClient: http,
-    }).prepare();
+    }).prepareYoutube();
     const second = await new RuntimeManager({
       rootDirectory,
       manifest: fixtureManifest("v2"),
       httpClient: http,
-    }).prepare({ mode: "update" });
+    }).prepareYoutube({ mode: "update" });
 
     expect(second.ytDlpExecutable).toContain(join("yt-dlp", "v2"));
     await expect(stat(dirname(first.ytDlpExecutable))).rejects.toMatchObject({ code: "ENOENT" });
@@ -98,7 +106,7 @@ describe("RuntimeManager", () => {
       httpClient: new MemoryRuntimeHttpClient(downloads("v1")),
     });
 
-    await expect(manager.prepare()).rejects.toMatchObject({
+    await expect(manager.prepareYoutube()).rejects.toMatchObject({
       kind: "verification",
     } satisfies Partial<RuntimeManagerError>);
     await expect(stat(join(rootDirectory, "tools", "yt-dlp", "v1"))).rejects.toMatchObject({

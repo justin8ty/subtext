@@ -49,6 +49,7 @@ export interface AcquisitionOptions {
   readonly refresh?: boolean;
   readonly signal?: AbortSignal;
   readonly asrQuality?: AsrQuality;
+  readonly onAsrFallback?: () => void;
   readonly onTranscriptDraft?: (draft: TranscriptDraft) => void;
 }
 
@@ -136,6 +137,7 @@ export class TranscriptAcquirer {
       if (selection.status === "selected") {
         return await this.acquireCaption(video, selection.track, selection.languageCode, options);
       }
+      options.onAsrFallback?.();
       return await this.acquireAsr(video, options);
     } catch (error) {
       if (!(error instanceof Error)) {

@@ -24,15 +24,13 @@ try {
 
 async function main(): Promise<void> {
   const settingsStore = new ApplicationSettingsStore();
-  const settings = await settingsStore.load();
+  await settingsStore.load();
   const credentials = new FileCredentialStore();
   const models = builtinModels({ credentials });
   const configuration = new ApplicationConfiguration(models, settingsStore, credentials);
-  const asrQuality = settings?.asrQuality ?? "balanced";
   const announcedDownloads = new Set<string>();
   const runtimeManager = new RuntimeManager();
-  const runtime = await runtimeManager.prepare({
-    quality: asrQuality,
+  const youtubeRuntime = await runtimeManager.prepareYoutube({
     onProgress: (progress) => reportRuntimeProgress(progress, announcedDownloads),
   });
   const terminal = new ProcessTerminal();
@@ -40,10 +38,10 @@ async function main(): Promise<void> {
   const library = new ArtifactLibrary();
   const acquisition = new TranscriptAcquirer(
     new YtDlpYoutubeAdapter({
-      executable: runtime.ytDlpExecutable,
-      ffmpegDirectory: runtime.ffmpegDirectory,
+      executable: youtubeRuntime.ytDlpExecutable,
+      ffmpegDirectory: youtubeRuntime.ffmpegDirectory,
     }),
-    new ManagedAsrAdapter(runtimeManager, asrQuality, runtime),
+    new ManagedAsrAdapter(runtimeManager),
     library,
   );
   const processing = new VideoProcessor(acquisition, library, () =>

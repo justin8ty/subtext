@@ -90,6 +90,7 @@ Public product naming and licensing remain deferred.
    - Green/amber/red for success, warning, and failure
 
 2. **Visible processing stages**
+
    ```text
    ● Inspecting video
    ✓ No eligible Caption Track found
@@ -97,13 +98,16 @@ Public product naming and licensing remain deferred.
    ↓ Downloading Default Audio
    ◌ Transcribing with Whisper
    ```
+
    Keep one active status line instead of appearing frozen.
 
 3. **Better Transcript presentation**
+
    ```text
    02:14  The transcript text starts here and wraps beneath
           the text rather than beneath the timestamp.
    ```
+
    Dim timestamps, highlight hyperlinks, and separate metadata from content.
 
 4. **Render Summary Markdown**

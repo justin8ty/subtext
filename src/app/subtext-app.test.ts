@@ -109,6 +109,25 @@ describe("SubtextApp", () => {
     app.stop();
   });
 
+  it("reports the ASR fallback while Default Audio and runtime preparation are pending", async () => {
+    const processing = new PendingAsrFallbackProcessing();
+    const terminal = new FakeTerminal();
+    const tui: TUI = new TuiMainScreen(terminal);
+    const app = new SubtextApp(tui, processing);
+    app.start();
+
+    typeText(terminal, SOURCE_URL);
+    terminal.send("\r");
+
+    await vi.waitFor(() =>
+      expect(renderedText(app)).toContain(
+        "No Eligible Caption Track found. Switching to local ASR.",
+      ),
+    );
+    expect(renderedText(app)).toContain("Preparing runtime and downloading Default Audio");
+    app.stop();
+  });
+
   it("streams an ASR Transcript Draft and replaces it with the canonical Transcript", async () => {
     const processing = new DelayedAsrProcessing();
     const terminal = new FakeTerminal();
@@ -492,6 +511,26 @@ class ImmediateProcessing implements SourceVideoProcessing {
     this.calls += 1;
     this.options = options;
     return this.outcome;
+  }
+
+  async summarize(): Promise<SummaryProcessingOutcome> {
+    return { status: "unavailable", message: "No Transcript." };
+  }
+}
+
+class PendingAsrFallbackProcessing implements SourceVideoProcessing {
+  process(
+    _sourceUrl: string,
+    options: VideoProcessingOptions = {},
+  ): Promise<VideoProcessingOutcome> {
+    options.onAsrFallback?.();
+    return new Promise((resolve) => {
+      options.signal?.addEventListener(
+        "abort",
+        () => resolve({ status: "cancelled", message: "Transcript acquisition was cancelled." }),
+        { once: true },
+      );
+    });
   }
 
   async summarize(): Promise<SummaryProcessingOutcome> {

@@ -154,20 +154,26 @@ describe("TranscriptAcquirer", () => {
     await expect(library.findTranscript(VIDEO_ID)).resolves.toBeNull();
   });
 
-  it("falls back to Default Audio, streams an ASR draft, and commits only the Transcript", async () => {
+  it("reports the ASR fallback before downloading Default Audio or preparing ASR", async () => {
     const library = new ArtifactLibrary(await temporaryLibrary());
     const workspaceRoot = await temporaryLibrary();
-    const youtube = new FakeAsrYoutubeAdapter(sourceVideoWithoutLanguage());
+    const events: string[] = [];
+    const youtube = new FakeAsrYoutubeAdapter(sourceVideoWithoutLanguage(), events);
     const segments = [
       { startMs: 0, endMs: 5_000, text: "ASR opening" },
       { startMs: 5_000, endMs: 10_000, text: "ASR ending" },
     ];
-    const asr = new ScriptedAsrAdapter({ languageCode: "es", model: "large-v3-turbo", segments });
+    const asr = new ScriptedAsrAdapter(
+      { languageCode: "es", model: "large-v3-turbo", segments },
+      undefined,
+      events,
+    );
     const drafts: string[] = [];
     const acquirer = new TranscriptAcquirer(youtube, asr, library, workspaceRoot);
 
     const outcome = await acquirer.acquire(`https://www.youtube.com/watch?v=${VIDEO_ID}`, {
       asrQuality: "accurate",
+      onAsrFallback: () => events.push("fallback"),
       onTranscriptDraft: (draft) => drafts.push(draft.segment.text),
     });
 
@@ -179,6 +185,7 @@ describe("TranscriptAcquirer", () => {
         provenance: { origin: "asr", languageCode: "es", model: "large-v3-turbo" },
       },
     });
+    expect(events).toEqual(["fallback", "audio", "asr"]);
     expect(drafts).toEqual(["ASR opening", "ASR ending"]);
     expect(asr.receivedLanguageCode).toBeUndefined();
     expect(asr.receivedDurationMs).toBe(10_000);
@@ -313,24 +320,26 @@ class UnusedAsrAdapter implements AsrAdapter {
 class ScriptedAsrAdapter implements AsrAdapter {
   readonly result: AsrTranscript | Error;
   readonly draftSegments: readonly AsrTranscript["segments"][number][];
+  readonly events: string[] | undefined;
   receivedDurationMs: number | undefined;
   receivedLanguageCode: string | undefined;
   receivedQuality: AsrTranscriptionOptions["quality"];
 
   constructor(
     result: AsrTranscript | Error,
-    draftSegments: readonly AsrTranscript["segments"][number][] = result instanceof Error
-      ? []
-      : result.segments,
+    draftSegments: readonly AsrTranscript["segments"][number][] | undefined = undefined,
+    events?: string[],
   ) {
     this.result = result;
-    this.draftSegments = draftSegments;
+    this.draftSegments = draftSegments ?? (result instanceof Error ? [] : result.segments);
+    this.events = events;
   }
 
   async transcribe(
     _audioPath: string,
     options: AsrTranscriptionOptions = {},
   ): Promise<AsrTranscript> {
+    this.events?.push("asr");
     this.receivedDurationMs = options.durationMs;
     this.receivedLanguageCode = options.languageCode;
     this.receivedQuality = options.quality;
@@ -346,10 +355,12 @@ class ScriptedAsrAdapter implements AsrAdapter {
 
 class FakeAsrYoutubeAdapter implements YoutubeAdapter {
   readonly video: InspectedSourceVideo;
+  readonly events: string[] | undefined;
   downloadedAudioPath: string | undefined;
 
-  constructor(video: InspectedSourceVideo) {
+  constructor(video: InspectedSourceVideo, events?: string[]) {
     this.video = video;
+    this.events = events;
   }
 
   async inspect(): Promise<InspectedSourceVideo> {
@@ -361,6 +372,7 @@ class FakeAsrYoutubeAdapter implements YoutubeAdapter {
   }
 
   async downloadDefaultAudio(_canonicalUrl: string, destinationPath: string): Promise<void> {
+    this.events?.push("audio");
     this.downloadedAudioPath = destinationPath;
     await writeFile(destinationPath, "fixture audio");
   }

@@ -1,31 +1,28 @@
-import type {
-  RuntimeManager,
-  RuntimePaths,
-  RuntimePreparationOptions,
+import {
+  RuntimeManagerError,
+  type AsrRuntimePaths,
+  type AsrRuntimePreparationOptions,
+  type RuntimeManager,
 } from "../runtime/runtime-manager.js";
 import type { AsrQuality } from "../runtime/runtime-manifest.js";
 import {
+  AsrAdapterError,
   type AsrAdapter,
   type AsrTranscript,
   type AsrTranscriptionOptions,
 } from "./asr-adapter.js";
 import { WhisperCppAsrAdapter } from "./whisper-cpp-adapter.js";
 
-type MutableRuntimePreparationOptions = {
-  -readonly [Key in keyof RuntimePreparationOptions]: RuntimePreparationOptions[Key];
+type MutableAsrRuntimePreparationOptions = {
+  -readonly [Key in keyof AsrRuntimePreparationOptions]: AsrRuntimePreparationOptions[Key];
 };
 
 export class ManagedAsrAdapter implements AsrAdapter {
   private readonly runtimeManager: RuntimeManager;
   private readonly adapters = new Map<AsrQuality, WhisperCppAsrAdapter>();
 
-  constructor(
-    runtimeManager: RuntimeManager,
-    initialQuality: AsrQuality,
-    initialRuntime: RuntimePaths,
-  ) {
+  constructor(runtimeManager: RuntimeManager) {
     this.runtimeManager = runtimeManager;
-    this.adapters.set(initialQuality, createAdapter(initialRuntime));
   }
 
   async transcribe(
@@ -35,11 +32,19 @@ export class ManagedAsrAdapter implements AsrAdapter {
     const quality = options.quality ?? "balanced";
     let adapter = this.adapters.get(quality);
     if (adapter === undefined) {
-      const preparationOptions: MutableRuntimePreparationOptions = { quality };
+      const preparationOptions: MutableAsrRuntimePreparationOptions = { quality };
       if (options.signal !== undefined) {
         preparationOptions.signal = options.signal;
       }
-      const runtime = await this.runtimeManager.prepare(preparationOptions);
+      let runtime: AsrRuntimePaths;
+      try {
+        runtime = await this.runtimeManager.prepareAsr(preparationOptions);
+      } catch (error) {
+        if (error instanceof RuntimeManagerError) {
+          throw runtimePreparationError(error);
+        }
+        throw error;
+      }
       adapter = createAdapter(runtime);
       this.adapters.set(quality, adapter);
     }
@@ -47,7 +52,17 @@ export class ManagedAsrAdapter implements AsrAdapter {
   }
 }
 
-function createAdapter(runtime: RuntimePaths): WhisperCppAsrAdapter {
+function runtimePreparationError(error: RuntimeManagerError): AsrAdapterError {
+  if (error.kind === "cancelled") {
+    return new AsrAdapterError("cancelled", error.message, { cause: error });
+  }
+  if (error.kind === "unsupported-platform") {
+    return new AsrAdapterError("unavailable", error.message, { cause: error });
+  }
+  return new AsrAdapterError("failed", error.message, { cause: error });
+}
+
+function createAdapter(runtime: AsrRuntimePaths): WhisperCppAsrAdapter {
   return new WhisperCppAsrAdapter({
     executable: runtime.whisperExecutable,
     modelPath: runtime.modelPath,

@@ -216,6 +216,7 @@ export class SubtextApp extends Container {
     try {
       const processingOptions: MutableVideoProcessingOptions = {
         signal: active.controller.signal,
+        onAsrFallback: () => this.renderAsrFallback(active),
         onTranscript: (ready) => this.renderReadyTranscript(ready, active),
         onTranscriptDraft: (draft) => this.renderTranscriptDraft(draft, active),
       };
@@ -245,6 +246,20 @@ export class SubtextApp extends Container {
     }
     this.renderVideoOutcome(outcome, active.transcriptRendered);
     this.restoreEditorFocus();
+    this.tui.requestRender();
+  }
+
+  private renderAsrFallback(active: ActiveProcessing): void {
+    if (
+      this.stopped ||
+      this.activeProcessing?.id !== active.id ||
+      active.cancellationRequested ||
+      active.transcriptRendered
+    ) {
+      return;
+    }
+    this.appendMessage("No Eligible Caption Track found. Switching to local ASR.");
+    this.status.setText("Preparing runtime and downloading Default Audio… Esc cancels.");
     this.tui.requestRender();
   }
 

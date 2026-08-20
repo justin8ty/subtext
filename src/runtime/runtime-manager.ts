@@ -34,23 +34,32 @@ export type RuntimeProgress =
   | { readonly phase: "ready"; readonly packageId: RuntimePackageId };
 
 export interface RuntimePreparationOptions {
-  readonly quality?: AsrQuality;
   readonly mode?: RuntimePreparationMode;
   readonly signal?: AbortSignal;
   readonly onProgress?: (progress: RuntimeProgress) => void;
 }
 
-export interface RuntimePaths {
+export interface AsrRuntimePreparationOptions extends RuntimePreparationOptions {
+  readonly quality?: AsrQuality;
+}
+
+export interface YoutubeRuntimePaths {
   readonly rootDirectory: string;
   readonly ytDlpExecutable: string;
   readonly ffmpegExecutable: string;
   readonly ffmpegDirectory: string;
+  readonly versions: {
+    readonly ytDlp: string;
+    readonly ffmpeg: string;
+  };
+}
+
+export interface AsrRuntimePaths {
+  readonly rootDirectory: string;
   readonly whisperExecutable: string;
   readonly modelPath: string;
   readonly modelName: string;
   readonly versions: {
-    readonly ytDlp: string;
-    readonly ffmpeg: string;
     readonly whisperCpp: string;
     readonly model: string;
   };
@@ -125,14 +134,48 @@ export class RuntimeManager {
     this.httpClient = options.httpClient ?? new FetchRuntimeHttpClient();
   }
 
-  async prepare(options: RuntimePreparationOptions = {}): Promise<RuntimePaths> {
+  async prepareYoutube(options: RuntimePreparationOptions = {}): Promise<YoutubeRuntimePaths> {
+    const installed = await this.preparePackages(youtubePackageSpecs(this.manifest), options);
+    const ytDlp = requireInstalled(installed, "yt-dlp");
+    const ffmpeg = requireInstalled(installed, "ffmpeg");
+    return {
+      rootDirectory: this.rootDirectory,
+      ytDlpExecutable: ytDlp.primaryPath,
+      ffmpegExecutable: ffmpeg.primaryPath,
+      ffmpegDirectory: dirname(ffmpeg.primaryPath),
+      versions: {
+        ytDlp: this.manifest.tools.ytDlp.version,
+        ffmpeg: this.manifest.tools.ffmpeg.version,
+      },
+    };
+  }
+
+  async prepareAsr(options: AsrRuntimePreparationOptions = {}): Promise<AsrRuntimePaths> {
+    const quality = options.quality ?? "balanced";
+    const installed = await this.preparePackages(asrPackageSpecs(this.manifest, quality), options);
+    const whisper = requireInstalled(installed, "whisper.cpp");
+    const model = requireInstalled(installed, `model-${quality}`);
+    return {
+      rootDirectory: this.rootDirectory,
+      whisperExecutable: whisper.primaryPath,
+      modelPath: model.primaryPath,
+      modelName: this.manifest.models[quality].modelName,
+      versions: {
+        whisperCpp: this.manifest.tools.whisperCpp.version,
+        model: this.manifest.models[quality].version,
+      },
+    };
+  }
+
+  private async preparePackages(
+    specs: readonly RuntimePackageSpec[],
+    options: RuntimePreparationOptions,
+  ): Promise<ReadonlyMap<RuntimePackageId, InstalledPackage>> {
     this.validateTarget();
     validateManifest(this.manifest);
     throwIfAborted(options.signal);
 
-    const quality = options.quality ?? "balanced";
     const mode = options.mode ?? "ensure";
-    const specs = packageSpecs(this.manifest, quality);
     await mkdir(this.rootDirectory, { recursive: true, mode: 0o700 });
 
     const installed = new Map<RuntimePackageId, InstalledPackage>();
@@ -152,26 +195,7 @@ export class RuntimeManager {
     if (mode === "update") {
       await this.removeObsoleteVersions(specs);
     }
-
-    const ytDlp = requireInstalled(installed, "yt-dlp");
-    const ffmpeg = requireInstalled(installed, "ffmpeg");
-    const whisper = requireInstalled(installed, "whisper.cpp");
-    const model = requireInstalled(installed, `model-${quality}`);
-    return {
-      rootDirectory: this.rootDirectory,
-      ytDlpExecutable: ytDlp.primaryPath,
-      ffmpegExecutable: ffmpeg.primaryPath,
-      ffmpegDirectory: dirname(ffmpeg.primaryPath),
-      whisperExecutable: whisper.primaryPath,
-      modelPath: model.primaryPath,
-      modelName: this.manifest.models[quality].modelName,
-      versions: {
-        ytDlp: this.manifest.tools.ytDlp.version,
-        ffmpeg: this.manifest.tools.ffmpeg.version,
-        whisperCpp: this.manifest.tools.whisperCpp.version,
-        model: this.manifest.models[quality].version,
-      },
-    };
+    return installed;
   }
 
   private validateTarget(): void {
@@ -292,13 +316,18 @@ export class RuntimeManager {
   }
 }
 
-function packageSpecs(
+function youtubePackageSpecs(manifest: RuntimeManifest): readonly RuntimePackageSpec[] {
+  return [
+    toolSpec("yt-dlp", "yt-dlp", manifest.tools.ytDlp),
+    toolSpec("ffmpeg", "ffmpeg", manifest.tools.ffmpeg),
+  ];
+}
+
+function asrPackageSpecs(
   manifest: RuntimeManifest,
   quality: AsrQuality,
 ): readonly RuntimePackageSpec[] {
   return [
-    toolSpec("yt-dlp", "yt-dlp", manifest.tools.ytDlp),
-    toolSpec("ffmpeg", "ffmpeg", manifest.tools.ffmpeg),
     toolSpec("whisper.cpp", "whisper.cpp", manifest.tools.whisperCpp),
     modelSpec(quality, manifest.models[quality]),
   ];

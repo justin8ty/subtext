@@ -55,12 +55,14 @@ export {
   RuntimeManager,
   RuntimeManagerError,
   type RuntimeHttpClient,
+  type AsrRuntimePaths,
+  type AsrRuntimePreparationOptions,
   type RuntimeManagerErrorKind,
   type RuntimeManagerOptions,
-  type RuntimePaths,
   type RuntimePreparationMode,
   type RuntimePreparationOptions,
   type RuntimeProgress,
+  type YoutubeRuntimePaths,
 } from "./runtime/runtime-manager.js";
 export {
   WINDOWS_X64_RUNTIME_MANIFEST,
