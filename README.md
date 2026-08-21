@@ -11,6 +11,14 @@ pnpm dev
 pnpm build
 ```
 
+Build the standalone Windows x64 executable with Bun:
+
+```bash
+pnpm build:windows
+```
+
+The executable is written to `release/watchless.exe`.
+
 After making changes, run:
 
 ```bash

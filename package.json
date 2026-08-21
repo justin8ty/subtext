@@ -20,6 +20,7 @@
     "dev": "tsx src/main.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "pnpm clean && tsc -p tsconfig.build.json",
+    "build:windows": "bun build src/main.ts --compile --target=bun-windows-x64 --outfile release/watchless.exe",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "format": "oxfmt .",
