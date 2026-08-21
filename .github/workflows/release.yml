@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      - run: pnpm build:linux
+      - run: pnpm build:windows
+
+      - name: Package binaries
+        run: |
+          tar -C release -czf watchless-linux-x64.tar.gz watchless
+          zip -j watchless-windows-x64.zip release/watchless.exe
+          sha256sum watchless-linux-x64.tar.gz watchless-windows-x64.zip > SHA256SUMS
+
+      - name: Publish release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            watchless-linux-x64.tar.gz \
+            watchless-windows-x64.zip \
+            SHA256SUMS \
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

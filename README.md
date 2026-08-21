@@ -1,7 +1,6 @@
 # Watchless
 
-Watchless supports Windows 11 x64 and Linux x64. It downloads pinned platform-specific
-runtime tools into `~/.watchless/runtime`; no global `yt-dlp`, FFmpeg, or whisper.cpp installation is required.
+Watchless supports Windows 11 x64 and Linux x64. It downloads pinned platform-specific runtime tools into `~/.watchless/runtime`; no global `yt-dlp`, FFmpeg, or whisper.cpp installation is required.
 
 ## Development commands
 
@@ -18,6 +17,8 @@ pnpm build:windows
 ```
 
 The executables are written to `release/`.
+
+Pushing a `v*` tag runs the release workflow and publishes both executables with SHA-256 checksums.
 
 After making changes, run:
 
