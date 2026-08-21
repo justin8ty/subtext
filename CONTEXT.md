@@ -1,6 +1,6 @@
-# Subtext
+# Watchless
 
-Subtext turns a public, completed YouTube video into a trustworthy, reusable transcript and a summary for understanding the video without watching it.
+Watchless turns a public, completed YouTube video into a trustworthy, reusable transcript and a summary for understanding the video without watching it.
 
 ## Language
 
@@ -61,7 +61,7 @@ The minimal durable records retained for a Source Video: its Transcript, direct 
 _Avoid_: Cache, working files
 
 **Artifact Library**:
-The persistent collection of Video Artifacts available across Subtext sessions.
+The persistent collection of Video Artifacts available across Watchless sessions.
 _Avoid_: Cache directory, output folder
 
 **App Command**:

@@ -1,8 +1,8 @@
-# Subtext Specification
+# Watchless Specification
 
 ## Product
 
-Subtext is a local-first terminal app for Windows 11 and Linux that helps users understand a public, completed, single YouTube video without watching it.
+Watchless is a local-first terminal app for Windows 11 and Linux that helps users understand a public, completed, single YouTube video without watching it.
 
 Media acquisition, ASR, Transcript normalization, and artifact storage remain local. Only Transcript-derived text and user-configured Summary instructions may be sent to the user-configured LLM provider.
 
@@ -54,7 +54,7 @@ Delete downloaded audio and processing intermediates after success. Derived Mark
 
 - Controlled LLM call through `pi-ai`; no autonomous agent
 - Transcript-only grounding with timestamp references
-- Model-chosen Markdown structure and formatting, guided by optional user Summary instructions; Subtext only requires a non-empty, normally completed response
+- Model-chosen Markdown structure and formatting, guided by optional user Summary instructions; Watchless only requires a non-empty, normally completed response
 - Single-pass when context permits; hierarchical summarization otherwise
 - Tested envelope: one to six hours
 - No RAG or interactive Q&A in v1
@@ -77,7 +77,7 @@ Public product naming and licensing remain deferred.
 
 ## Improvements
 
-- When no Eligible Caption Track is available, immediately report that none was found and that Subtext is switching to ASR. Show this before Default Audio download and runtime preparation so the app does not appear stalled during the fallback.
+- When no Eligible Caption Track is available, immediately report that none was found and that Watchless is switching to ASR. Show this before Default Audio download and runtime preparation so the app does not appear stalled during the fallback.
 - Replace the overlay palette with Command Completion below the focused editor. Typing `/` lists App Commands without covering the existing interface; additional text fuzzy-filters command names, descriptions, and search aliases. For example, `/set` matches Options through its `settings` alias. Selecting an App Command replaces Command Completion in the same below-editor region with that command's interface; `/settings`, `/help`, and other App Commands do not open overlays.
 - Add native Linux support, including managed runtime assets, process handling, external-open behavior, packaging, and platform-specific verification.
 
