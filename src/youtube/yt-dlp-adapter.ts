@@ -228,7 +228,7 @@ async function readCaptionResponse(response: Response): Promise<string> {
   if (Number.isFinite(contentLength) && contentLength > MAX_CAPTION_BYTES) {
     throw new YoutubeAdapterError(
       "failed",
-      "The Caption Track is larger than Subtext can safely process.",
+      "The Caption Track is larger than Watchless can safely process.",
     );
   }
   if (response.body === null) {
@@ -248,7 +248,7 @@ async function readCaptionResponse(response: Response): Promise<string> {
       await reader.cancel().catch(() => undefined);
       throw new YoutubeAdapterError(
         "failed",
-        "The Caption Track is larger than Subtext can safely process.",
+        "The Caption Track is larger than Watchless can safely process.",
       );
     }
     chunks.push(result.value);
@@ -384,7 +384,7 @@ function runProcess(
         reject(
           new YoutubeAdapterError(
             "failed",
-            "yt-dlp produced more process output than Subtext can safely process.",
+            "yt-dlp produced more process output than Watchless can safely process.",
           ),
         );
         return;

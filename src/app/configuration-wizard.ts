@@ -562,8 +562,8 @@ export class ConfigurationWizard extends Panel implements Focusable {
     this.addChild(
       new SectionHeader(
         this.options.required && this.configuration.current === null
-          ? "Set up Subtext"
-          : "Subtext Options",
+          ? "Set up Watchless"
+          : "Watchless Options",
         "Configure each section independently",
         1,
       ),

@@ -104,7 +104,7 @@ describe("YtDlpYoutubeAdapter hardening", () => {
       }),
     ).rejects.toMatchObject({
       kind: "failed",
-      message: "The Caption Track is larger than Subtext can safely process.",
+      message: "The Caption Track is larger than Watchless can safely process.",
     });
   });
 });

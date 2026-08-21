@@ -96,7 +96,7 @@ describe("SubtextApp", () => {
 
     const rendered = app.render(80).join("\n");
     const plain = stripTerminalSequences(rendered);
-    expect(plain).toContain("◆ SUBTEXT");
+    expect(plain).toContain("◆ WATCHLESS");
     expect(plain).toContain("• Get YouTube transcripts instantly");
     expect(plain).toContain("• Summarize videos with AI");
     expect(plain).toContain("• Export transcripts and summaries");
@@ -141,7 +141,7 @@ describe("SubtextApp", () => {
       "▶ Transcript · EN · Creator Captions · Ctrl+O expand",
     );
     expect(stripTerminalSequences(collapsed)).not.toContain("A later supporting example.");
-    expect(collapsed).toContain("\u001b[36m◆\u001b[0m \u001b[1;36mSUBTEXT\u001b[0m");
+    expect(collapsed).toContain("\u001b[36m◆\u001b[0m \u001b[1;36mWATCHLESS\u001b[0m");
     expect(collapsed).toContain(`\u001b[1;36m${TRANSCRIPT.video.title}\u001b[0m`);
     expect(collapsed).toContain("\u001b[32mTranscript and Summary completed.\u001b[0m");
     expect(stripTerminalSequences(collapsed)).toContain("Takeaways");
@@ -343,7 +343,7 @@ describe("SubtextApp", () => {
     await vi.waitFor(() => expect(renderedText(app)).toContain("→ Help"));
     terminal.send("\r");
 
-    await vi.waitFor(() => expect(renderedText(app)).toContain("Subtext Help"));
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Watchless Help"));
     expect(renderedText(app)).not.toContain("Browse completed Video Artifacts");
     expect(tui.hasOverlay()).toBe(false);
     expect(processing.signal?.aborted).toBe(false);
@@ -351,7 +351,7 @@ describe("SubtextApp", () => {
     processing.complete();
     await vi.waitFor(() => expect(renderedText(app)).toContain("Ready for another URL."));
     terminal.send("\u001b");
-    expect(renderedText(app)).not.toContain("Subtext Help");
+    expect(renderedText(app)).not.toContain("Watchless Help");
     expect(processing.signal?.aborted).toBe(false);
     app.stop();
   });
@@ -422,7 +422,7 @@ describe("SubtextApp", () => {
     app.start();
 
     expect(tui.hasOverlay()).toBe(false);
-    expect(renderedText(app)).toContain("Set up Subtext");
+    expect(renderedText(app)).toContain("Set up Watchless");
     await vi.waitFor(() => expect(renderedText(app)).toContain("Summary models"));
     expect(renderedText(app)).not.toContain("[AUTH REQUIRED]");
     terminal.send("\r");
@@ -435,7 +435,7 @@ describe("SubtextApp", () => {
 
     await vi.waitFor(() => expect(configuration.saved?.apiKey).toBe("fixture-secret-key"));
     await vi.waitFor(() => expect(renderedText(app)).toContain("Summary model saved."));
-    expect(renderedText(app)).toContain("Subtext Options");
+    expect(renderedText(app)).toContain("Watchless Options");
     expect(tui.hasOverlay()).toBe(false);
     expect(configuration.current).toMatchObject({
       summaryProvider: "deepseek",
@@ -446,7 +446,7 @@ describe("SubtextApp", () => {
     });
     terminal.send("\u001b");
     terminal.send("\u001b");
-    await vi.waitFor(() => expect(renderedText(app)).not.toContain("Subtext Options"));
+    await vi.waitFor(() => expect(renderedText(app)).not.toContain("Watchless Options"));
     app.stop();
   });
 
@@ -707,7 +707,7 @@ describe("SubtextApp", () => {
     await vi.waitFor(() => expect(renderedText(app)).toContain("→ Options"));
     terminal.send("\r");
 
-    await vi.waitFor(() => expect(renderedText(app)).toContain("Subtext Options"));
+    await vi.waitFor(() => expect(renderedText(app)).toContain("Watchless Options"));
     expect(renderedText(app)).not.toContain("Browse completed Video Artifacts");
     expect(renderedText(app)).not.toContain("Configure Summary and ASR preferences");
     expect(tui.hasOverlay()).toBe(false);

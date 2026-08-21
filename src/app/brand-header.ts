@@ -16,7 +16,7 @@ export class BrandHeader implements Component {
     }
 
     return [
-      ...wrapTextWithAnsi(`${THEME.accent("◆")} ${THEME.heading("SUBTEXT")}`, width),
+      ...wrapTextWithAnsi(`${THEME.accent("◆")} ${THEME.heading("WATCHLESS")}`, width),
       ...FEATURES.flatMap((feature) => renderIndented(renderFeature(feature), width)),
     ];
   }

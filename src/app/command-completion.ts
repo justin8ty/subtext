@@ -36,7 +36,7 @@ const APP_COMMANDS: readonly AppCommand[] = [
   {
     destination: "quit",
     label: "Quit",
-    description: "Exit Subtext",
+    description: "Exit Watchless",
     aliases: ["exit", "close"],
   },
 ];

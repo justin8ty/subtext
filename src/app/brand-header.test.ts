@@ -16,14 +16,14 @@ describe("BrandHeader", () => {
     const plain = stripTerminalSequences(rendered);
 
     expect(rendered).toContain("\u001b[36m◆\u001b[0m");
-    expect(rendered).toContain("\u001b[1;36mSUBTEXT\u001b[0m");
+    expect(rendered).toContain("\u001b[1;36mWATCHLESS\u001b[0m");
     expect(plain).toBe(
       [
-        "◆ SUBTEXT",
+        "◆ WATCHLESS",
         "  • Get YouTube transcripts instantly",
         "  • Summarize videos with AI",
-        "  • Automatic Speech Recognition for videos without transcript",
-        "  • Type / for more options",
+        "  • Export transcripts and summaries",
+        "  • Automatic Speech Recognition supported for videos without transcript",
       ].join("\n"),
     );
   });

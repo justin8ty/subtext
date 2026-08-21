@@ -156,7 +156,7 @@ export class SubtextApp extends Container {
       this.activeProcessing.controller.abort();
       this.activeProcessing.stageView.finish("warning");
       this.appendMessage(
-        `Incomplete — ${incompleteWork} cancelled because Subtext quit.`,
+        `Incomplete — ${incompleteWork} cancelled because Watchless quit.`,
         "warning",
       );
       this.activeProcessing = null;

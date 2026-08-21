@@ -17,8 +17,8 @@ import { YtDlpYoutubeAdapter } from "./youtube/yt-dlp-adapter.js";
 try {
   await main();
 } catch (error) {
-  const message = error instanceof Error ? error.message : "Subtext failed to start.";
-  process.stderr.write(`Subtext could not start: ${message}\n`);
+  const message = error instanceof Error ? error.message : "Watchless failed to start.";
+  process.stderr.write(`Watchless could not start: ${message}\n`);
   process.exitCode = 1;
 }
 

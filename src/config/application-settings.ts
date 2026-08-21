@@ -78,7 +78,7 @@ export class ApplicationSettingsStore {
         this.currentSettings = null;
         return null;
       }
-      throw new ApplicationSettingsError("Could not read Subtext settings.", { cause: error });
+      throw new ApplicationSettingsError("Could not read Watchless settings.", { cause: error });
     }
   }
 
@@ -89,7 +89,7 @@ export class ApplicationSettingsStore {
       this.currentSettings = settings;
       return settings;
     } catch (error) {
-      throw new ApplicationSettingsError("Could not save Subtext settings.", { cause: error });
+      throw new ApplicationSettingsError("Could not save Watchless settings.", { cause: error });
     }
   }
 }
@@ -165,7 +165,7 @@ export class FileCredentialStore implements CredentialStore {
       if (error instanceof Error && isMissingFile(error)) {
         return {};
       }
-      throw new ApplicationSettingsError("Could not read Subtext authentication.", {
+      throw new ApplicationSettingsError("Could not read Watchless authentication.", {
         cause: error,
       });
     }

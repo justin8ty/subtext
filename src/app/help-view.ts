@@ -10,7 +10,7 @@ export class HelpView extends Panel {
   constructor(close: () => void) {
     super();
     this.close = close;
-    this.addChild(new SectionHeader("Subtext Help", "Keyboard shortcuts and app basics", 1));
+    this.addChild(new SectionHeader("Watchless Help", "Keyboard shortcuts and app basics", 1));
     this.addChild(new Spacer(1));
     this.addChild(new Text("Paste a YouTube URL and press Enter.", 1, 0));
     this.addChild(new Spacer(1));

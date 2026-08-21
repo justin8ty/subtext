@@ -148,7 +148,7 @@ export class RuntimeManager {
     if (manifest === null) {
       throw new RuntimeManagerError(
         "unsupported-platform",
-        `Subtext has no managed runtime for ${process.platform}/${process.arch}.`,
+        `Watchless has no managed runtime for ${process.platform}/${process.arch}.`,
       );
     }
     this.manifest = manifest;
@@ -226,7 +226,7 @@ export class RuntimeManager {
     ) {
       throw new RuntimeManagerError(
         "unsupported-platform",
-        `Subtext runtime ${this.manifest.platform}/${this.manifest.architecture} cannot run on ${process.platform}/${process.arch}.`,
+        `Watchless runtime ${this.manifest.platform}/${this.manifest.architecture} cannot run on ${process.platform}/${process.arch}.`,
       );
     }
   }
@@ -544,7 +544,7 @@ async function materializeArchiveSymlinks(rootDirectory: string): Promise<void> 
 class FetchRuntimeHttpClient implements RuntimeHttpClient {
   get(url: string, signal?: AbortSignal): Promise<Response> {
     const init: RequestInit = {
-      headers: { "User-Agent": "Subtext runtime manager" },
+      headers: { "User-Agent": "Watchless runtime manager" },
       redirect: "follow",
     };
     if (signal !== undefined) {
