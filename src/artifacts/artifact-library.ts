@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { defaultAppDataDirectory } from "../platform/app-paths.js";
 import {
   CAPTION_TRACK_ARTIFACT_FILENAME,
   TRANSCRIPT_SCHEMA_VERSION,
@@ -64,7 +64,7 @@ export class ArtifactLibraryError extends Error {
 export class ArtifactLibrary implements ArtifactLibraryAccess {
   readonly rootDirectory: string;
 
-  constructor(rootDirectory = join(homedir(), ".subtext")) {
+  constructor(rootDirectory = defaultAppDataDirectory()) {
     this.rootDirectory = rootDirectory;
   }
 

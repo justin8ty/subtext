@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type {
@@ -10,6 +9,7 @@ import type {
   CredentialStore,
 } from "@earendil-works/pi-ai";
 
+import { defaultAppDataDirectory } from "../platform/app-paths.js";
 import type { AsrQuality } from "../runtime/runtime-manifest.js";
 
 export type SummaryDetail = "concise" | "standard" | "detailed";
@@ -59,7 +59,7 @@ export class ApplicationSettingsStore {
   readonly rootDirectory: string;
   private currentSettings: ApplicationSettings | null = null;
 
-  constructor(rootDirectory = join(homedir(), ".subtext")) {
+  constructor(rootDirectory = defaultAppDataDirectory()) {
     this.rootDirectory = rootDirectory;
   }
 
@@ -98,7 +98,7 @@ export class FileCredentialStore implements CredentialStore {
   readonly path: string;
   private queue: Promise<void> = Promise.resolve();
 
-  constructor(rootDirectory = join(homedir(), ".subtext")) {
+  constructor(rootDirectory = defaultAppDataDirectory()) {
     this.path = join(rootDirectory, AUTH_FILENAME);
   }
 

@@ -12,12 +12,12 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 
 import extractZip from "extract-zip";
 import { x as extractTar } from "tar";
 
+import { defaultAppDataDirectory } from "../platform/app-paths.js";
 import {
   runtimeManifestFor,
   type AsrQuality,
@@ -27,7 +27,7 @@ import {
   type RuntimeToolManifest,
 } from "./runtime-manifest.js";
 
-const RECEIPT_FILENAME = ".subtext-runtime.json";
+const RECEIPT_FILENAME = ".watchless-runtime.json";
 const RECEIPT_SCHEMA_VERSION = 1;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 
@@ -143,7 +143,7 @@ export class RuntimeManager {
   private readonly httpClient: RuntimeHttpClient;
 
   constructor(options: RuntimeManagerOptions = {}) {
-    this.rootDirectory = options.rootDirectory ?? join(homedir(), ".subtext", "runtime");
+    this.rootDirectory = options.rootDirectory ?? join(defaultAppDataDirectory(), "runtime");
     const manifest = options.manifest ?? runtimeManifestFor(process.platform, process.arch);
     if (manifest === null) {
       throw new RuntimeManagerError(

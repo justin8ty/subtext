@@ -16,7 +16,7 @@ Media acquisition, ASR, Transcript normalization, and artifact storage remain lo
    - ASR Transcript from Default Audio
 4. Print the timestamped Transcript.
 5. Generate and print a transcript-grounded Summary.
-6. Retain reusable Video Artifacts under `~/.subtext`.
+6. Retain reusable Video Artifacts under `~/.watchless`.
 
 The YouTube video ID is the durable identity: URL variants reuse an existing Transcript unless the user chooses Refresh in the app. A Transcript Candidate must be non-empty and plausibly cover the Source Video; needs-input, unavailable, blocked, failed, and cancelled outcomes are never presented as completed.
 
@@ -67,8 +67,8 @@ Delete downloaded audio and processing intermediates after success. Derived Mark
 - `yt-dlp` process adapter
 - `whisper.cpp` process adapter
 - Quantized `large-v3-turbo` balanced profile; `large-v3` accurate profile
-- Managed binaries/models under `~/.subtext/runtime`
-- Pi-compatible credentials under `~/.subtext/auth.json`
+- Managed binaries/models under `~/.watchless/runtime`
+- Pi-compatible credentials under `~/.watchless/auth.json`
 - npm distribution for Windows x64 and Linux x64 initially
 - No telemetry
 - No speaker diarization or LLM rewriting of the canonical Transcript
